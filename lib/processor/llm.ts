@@ -9,6 +9,7 @@ import { CATEGORY_LABELS } from '../i18n/categories'
 import { CONTENT_CATEGORIES } from '../types'
 import type { LLMResult, ContentCategory } from '../types'
 import { pangu } from '../utils/pangu'
+import { isDuplicateKeyError } from './outcome'
 
 const SYSTEM_PROMPT = `你是 AI Radar 的内容分析师，专注于全球 AI 行业动态。
 你的任务是分析 AI 相关文章，为中国 AI 从业者（产品经理、开发者、创业者）提取关键信息。
@@ -179,6 +180,17 @@ export async function processUnprocessedArticles(batchSize = 20): Promise<{
         })
 
       if (insertError) {
+        // 23505 = a processed_articles row already exists for this article.
+        // It was processed before; only articles.is_processed is out of sync.
+        // Reconcile the flag and count it as processed — not a failure.
+        if (isDuplicateKeyError(insertError)) {
+          await supabase
+            .from('articles')
+            .update({ is_processed: true })
+            .eq('id', article.id)
+          processed++
+          continue
+        }
         console.error(`[Processor] Insert error for ${article.id}:`, insertError)
         failed++
         continue
@@ -245,6 +257,10 @@ export async function reprocessFallbackArticles(batchSize = 10): Promise<{
 
   let reprocessed = 0
   let failed = 0
+  // Transient, self-healing retries (usually LLM quota exhaustion). Tracked
+  // for visibility but deliberately NOT counted as failures so they never
+  // alarm the workflow — they succeed on a later run once quota resets.
+  let pending = 0
 
   for (const fb of fallbacks) {
     try {
@@ -256,11 +272,11 @@ export async function reprocessFallbackArticles(batchSize = 10): Promise<{
         .single()
 
       if (!article) {
-        // Article was deleted, clean up
+        // Source article was deleted — retire the orphan row. Housekeeping,
+        // not a failure.
         await supabase.from('processed_articles')
           .update({ reprocess_attempts: 3 })
           .eq('id', fb.id)
-        failed++
         continue
       }
 
@@ -274,11 +290,13 @@ export async function reprocessFallbackArticles(batchSize = 10): Promise<{
       )
 
       if (modelUsed === 'fallback') {
-        // Still failing, increment attempt count
+        // Still no real result (usually LLM quota exhaustion). Record the
+        // attempt for backoff, but treat it as a pending retry — not a
+        // failure — so a quota-only run does not alarm the workflow.
         await supabase.from('processed_articles')
           .update({ reprocess_attempts: fb.reprocess_attempts + 1 })
           .eq('id', fb.id)
-        failed++
+        pending++
         continue
       }
 
@@ -307,6 +325,8 @@ export async function reprocessFallbackArticles(batchSize = 10): Promise<{
     }
   }
 
-  console.log(`[Reprocess] Done: ${reprocessed} reprocessed, ${failed} failed`)
+  console.log(
+    `[Reprocess] Done: ${reprocessed} reprocessed, ${pending} pending (retry later), ${failed} failed`
+  )
   return { reprocessed, failed }
 }

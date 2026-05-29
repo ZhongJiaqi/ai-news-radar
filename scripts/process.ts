@@ -1,6 +1,7 @@
 // scripts/process.ts — Standalone LLM processing script for GitHub Actions
 import 'dotenv/config'
 import { processUnprocessedArticles, reprocessFallbackArticles } from '../lib/processor/llm'
+import { shouldAlarmProcessRun } from '../lib/processor/outcome'
 
 async function main() {
   const batchSize = parseInt(process.env.BATCH_SIZE || '50', 10)
@@ -16,12 +17,15 @@ async function main() {
   const reprocessResult = await reprocessFallbackArticles(reprocessSize)
   console.log(`[Reprocess] Done: ${reprocessResult.reprocessed} reprocessed, ${reprocessResult.failed} failed`)
 
-  // Only fail the workflow when both passes are completely broken.
-  // Partial failures should not block database updates / site freshness.
-  const allFailed =
-    result.processed === 0 && result.failed > 0 &&
-    reprocessResult.reprocessed === 0 && reprocessResult.failed > 0
-  if (allFailed) process.exit(1)
+  // Alarm (non-zero exit → GitHub Actions failure email) only on a systemic
+  // break: both passes did zero useful work AND hit genuine failures.
+  // Transient causes — LLM quota exhaustion, already-processed duplicates —
+  // are folded out upstream and exit cleanly, so the daily failure emails
+  // stop firing on conditions that self-heal on the next run.
+  if (shouldAlarmProcessRun({ newPass: result, reprocessPass: reprocessResult })) {
+    console.error('[Process] Both passes failed for genuine reasons — exiting 1 (alarm).')
+    process.exit(1)
+  }
   process.exit(0)
 }
 
