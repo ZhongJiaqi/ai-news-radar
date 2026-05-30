@@ -4,9 +4,9 @@
 // Defaults (override via env):
 //   ARTICLE_RETENTION_DAYS=90    deletes articles + cascades processed_articles
 //   JOB_RUNS_RETENTION_DAYS=30   keeps recent ops history only
+//   DIGEST_RETENTION_DAYS=7      matches the History rail's 7-day window
 //
-// Tables kept indefinitely: sources, source_health, daily_digests,
-// model_registry, model_rankings — all small or product-history valuable.
+// Tables kept indefinitely: sources, source_health — small or product-history valuable.
 
 import 'dotenv/config'
 import { createServiceClient } from '../lib/supabase'
@@ -19,9 +19,18 @@ const JOB_RUNS_RETENTION_DAYS = parseInt(
   process.env.JOB_RUNS_RETENTION_DAYS || '30',
   10,
 )
+const DIGEST_RETENTION_DAYS = parseInt(
+  process.env.DIGEST_RETENTION_DAYS || '7',
+  10,
+)
 
 function cutoffISO(days: number): string {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+}
+
+// YYYY-MM-DD cutoff for DATE-typed columns (daily_digests.date).
+function cutoffDate(days: number): string {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 }
 
 async function deleteOlderThan(
@@ -43,6 +52,7 @@ async function deleteOlderThan(
 async function main(): Promise<void> {
   const articleCutoff = cutoffISO(ARTICLE_RETENTION_DAYS)
   const jobCutoff = cutoffISO(JOB_RUNS_RETENTION_DAYS)
+  const digestCutoff = cutoffDate(DIGEST_RETENTION_DAYS)
 
   console.log(`[Cleanup] articles older than ${ARTICLE_RETENTION_DAYS}d (< ${articleCutoff})`)
   const articlesDeleted = await deleteOlderThan('articles', 'crawled_at', articleCutoff)
@@ -52,8 +62,12 @@ async function main(): Promise<void> {
   const jobsDeleted = await deleteOlderThan('job_runs', 'started_at', jobCutoff)
   console.log(`[Cleanup] deleted ${jobsDeleted} job_runs`)
 
+  console.log(`[Cleanup] daily_digests older than ${DIGEST_RETENTION_DAYS}d (< ${digestCutoff})`)
+  const digestsDeleted = await deleteOlderThan('daily_digests', 'date', digestCutoff)
+  console.log(`[Cleanup] deleted ${digestsDeleted} daily_digests`)
+
   console.log(
-    `[Cleanup] Done: ${articlesDeleted} articles, ${jobsDeleted} job_runs removed`,
+    `[Cleanup] Done: ${articlesDeleted} articles, ${jobsDeleted} job_runs, ${digestsDeleted} daily_digests removed`,
   )
 }
 

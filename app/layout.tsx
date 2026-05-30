@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Outfit, JetBrains_Mono } from 'next/font/google'
 import Link from 'next/link'
+import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 import NavClock from '@/components/NavClock'
 import NavLinks from '@/components/NavLinks'
@@ -78,6 +79,7 @@ export default function RootLayout({
         <footer className="root-footer text-center py-8 font-mono text-[0.68rem] text-gray-400 border-t border-gray-200 mt-8 tracking-widest uppercase">
           AI News — Daily AI Briefing
         </footer>
+        <Analytics />
       </body>
     </html>
   )
