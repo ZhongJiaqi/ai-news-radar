@@ -4,7 +4,10 @@ import { getHistoryDay } from '@/lib/history'
 import HistoryReader from '@/components/HistoryReader'
 import type { Metadata } from 'next'
 
-export const dynamic = 'force-dynamic'
+// ISR: re-validate at most every hour. Past dates never change; today's
+// page just needs to pick up new articles after process/digest cron runs
+// (every 3h / daily). Caching also rides out Supabase fetch hiccups.
+export const revalidate = 3600
 
 interface PageProps {
   params: Promise<{ date: string }>
