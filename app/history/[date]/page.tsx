@@ -1,7 +1,10 @@
 import { createPublicClient } from '@/lib/supabase'
 import { notFound } from 'next/navigation'
-import DigestView from '@/components/DigestView'
+import { getHistoryDay } from '@/lib/history'
+import HistoryReader from '@/components/HistoryReader'
 import type { Metadata } from 'next'
+
+export const dynamic = 'force-dynamic'
 
 interface PageProps {
   params: Promise<{ date: string }>
@@ -29,26 +32,23 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   }
 }
 
-export default async function DigestDatePage({ params }: PageProps) {
+export default async function HistoryDatePage({ params }: PageProps) {
   const { date } = await params
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) notFound()
 
-  const supabase = createPublicClient()
-  const { data: digest } = await supabase
-    .from('daily_digests')
-    .select('*')
-    .eq('date', date)
-    .single()
+  const day = await getHistoryDay(date)
 
-  if (!digest) {
+  if (!day) {
     return (
-      <div className="text-center py-24">
-        <p className="text-sm text-gray-500 mb-2">{date}</p>
-        <p className="text-[15px] text-gray-600">该日简报尚未生成</p>
+      <div className="radar-read-inner">
+        <div className="radar-empty">
+          <div className="e1">{date} 简报尚未生成</div>
+          <div className="e2 mono">Digest Not Found</div>
+        </div>
       </div>
     )
   }
 
-  return <DigestView markdown={digest.content_md} date={date} />
+  return <HistoryReader day={day} />
 }

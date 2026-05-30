@@ -12,7 +12,7 @@ function extractSummary(contentMd: string): string[] {
   const end = contentMd.indexOf('\n## ', start + 1)
   const text = (end === -1 ? contentMd.slice(start) : contentMd.slice(start, end))
     .replace('## 今日总结', '').trim()
-  return text.split('\n').filter((l: string) => l.trim().length > 10).slice(0, 8)
+  return text.split('\n').filter((l: string) => l.trim().length > 10).slice(0, 4)
 }
 
 async function getData() {
@@ -28,7 +28,7 @@ async function getData() {
     .lt('published_at', until)
     .gte('importance_score', 5)
     .order('importance_score', { ascending: false })
-    .limit(30)
+    .limit(8)
 
   const articles = (articlesRes.data || []) as EnrichedArticle[]
 

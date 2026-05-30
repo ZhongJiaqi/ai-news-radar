@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Outfit, Newsreader, JetBrains_Mono } from 'next/font/google'
+import { Outfit, JetBrains_Mono } from 'next/font/google'
 import Link from 'next/link'
 import './globals.css'
 import NavClock from '@/components/NavClock'
@@ -10,13 +10,6 @@ const outfit = Outfit({
   subsets: ['latin'],
   weight: ['300', '400', '500', '600', '700'],
   variable: '--font-outfit',
-})
-
-const newsreader = Newsreader({
-  subsets: ['latin'],
-  weight: ['400', '600', '700'],
-  style: ['normal', 'italic'],
-  variable: '--font-newsreader',
 })
 
 const jetbrainsMono = JetBrains_Mono({
@@ -61,7 +54,7 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <body
-        className={`${outfit.variable} ${newsreader.variable} ${jetbrainsMono.variable} font-sans bg-[#F7F6F3] text-[#2F3437] min-h-screen`}
+        className={`${outfit.variable} ${jetbrainsMono.variable} font-sans bg-[#0A0D0E] text-[#E9EBE8] min-h-screen`}
       >
         <nav className="root-nav sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-200/60 relative">
           <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">

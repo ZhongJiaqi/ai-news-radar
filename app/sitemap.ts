@@ -14,7 +14,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     .limit(30)
 
   const digestEntries: MetadataRoute.Sitemap = (digests ?? []).map(d => ({
-    url: `${siteUrl}/digest/${d.date}`,
+    url: `${siteUrl}/history/${d.date}`,
     lastModified: new Date(`${d.date}T08:00:00+08:00`),
     changeFrequency: 'never' as const,
     priority: 0.7,
@@ -26,12 +26,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       lastModified: new Date(),
       changeFrequency: 'hourly',
       priority: 1.0,
-    },
-    {
-      url: `${siteUrl}/models`,
-      lastModified: new Date(),
-      changeFrequency: 'daily',
-      priority: 0.75,
     },
     {
       url: `${siteUrl}/digest`,

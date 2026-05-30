@@ -2,215 +2,542 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================
+   AI Radar — Dark "Radar Terminal" design system
+   Direction A. Tokens & measurements per design_handoff README.
+   ============================================================ */
+
+:root {
+  /* color */
+  --bg: #0A0D0E;          /* page background (near-black, cool) */
+  --surf: #111617;        /* raised surface (rare) */
+  --fg: #E9EBE8;          /* primary text / headlines */
+  --fg2: #99A39E;         /* secondary text, summaries, nav labels */
+  --faint: #4A5450;       /* numerals, indices, muted meta */
+  --line: #1E2526;        /* hairline borders & dividers */
+  --green: #5FE3A1;       /* radar accent */
+  --amber: #E8B355;       /* time-ago, why-it-matters */
+
+  --wash: rgba(95, 227, 161, 0.03);        /* row hover */
+  --wash-active: rgba(95, 227, 161, 0.07); /* active archive row */
+  --green-30: rgba(95, 227, 161, 0.30);
+  --green-50: rgba(95, 227, 161, 0.50);
+
+  /* type scale */
+  --text-xs: 0.6875rem;    /* 11px — meta, eyebrow, nav */
+  --text-sm: 0.8125rem;    /* 13px — tabs, secondary */
+  --text-base: 0.90625rem; /* 14.5px — body / summary */
+  --text-md: 1.125rem;     /* 18px — history headline */
+  --text-lg: 1.4375rem;    /* 23px — top-story headline */
+  --text-xl: 2.125rem;     /* 34px — page title */
+
+  /* font stacks */
+  --font-sans: var(--font-outfit), 'Outfit', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  --font-mono: var(--font-mono-jb), 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+
+  /* spacing */
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2.75rem;
+  --space-2xl: 3.5rem;
+
+  /* layout */
+  --content-width: 1180px;
+  --rail-width: 182px;
+  --nav-height: 60px;
+}
+
+html { background: var(--bg); }
+
 body {
-  font-family: var(--font-outfit), 'Outfit', -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+  font-family: var(--font-sans);
+  color: var(--fg);
+  background: var(--bg);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-kerning: normal;
   text-rendering: optimizeLegibility;
 }
 
-:root {
-  /* normalize: unified design tokens */
-  --bg: #F7F6F3;
-  --bg-surface: #FFFFFF;
-  --text-heading: #111111;
-  --text-body: #2F3437;
-  --text-secondary: #555555;
-  --text-muted: #787774;
-  --text-faint: #CCCCC6;
-  --border: #EAEAEA;
-  --accent: oklch(48% 0.1 230);         /* desaturated blue — links, article titles */
-  --accent-hover: oklch(62% 0.1 230);   /* lighter blue on hover */
-  --accent-subtle: oklch(95% 0.02 230); /* tinted surface for tags */
-  --warm: oklch(72% 0.08 75);           /* amber — time labels, highlights */
-  --warm-subtle: oklch(96% 0.02 75);    /* warm tinted bg */
-  --tint-green: oklch(94% 0.03 155);    /* subtle green for official sources */
-  --tint-green-text: oklch(45% 0.1 155);
-
-  /* typeset: type scale (1.25 ratio) */
-  --text-xs: 0.6875rem;   /* 11px — captions, meta */
-  --text-sm: 0.8125rem;   /* 13px — secondary */
-  --text-base: 0.9375rem; /* 15px — body */
-  --text-lg: 1.3rem;      /* headings */
-  --text-xl: 2.75rem;     /* display */
-
-  /* typeset: font stacks */
-  --font-serif: var(--font-newsreader), 'Newsreader', 'Georgia', serif;
-  --font-sans: var(--font-outfit), 'Outfit', -apple-system, 'Helvetica Neue', sans-serif;
-  --font-mono: var(--font-mono-jb), 'JetBrains Mono', 'SF Mono', monospace;
-
-  /* arrange: spacing scale */
-  --space-xs: 0.25rem;  /* 4px */
-  --space-sm: 0.5rem;   /* 8px */
-  --space-md: 1rem;     /* 16px */
-  --space-lg: 1.5rem;   /* 24px */
-  --space-xl: 3rem;     /* 48px */
-  --space-2xl: 5rem;    /* 80px */
-
-  /* normalize: layout */
-  --content-width: 960px;
-  --content-wide: 880px;
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Scrollbar */
-::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #DDDDD8; border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: #BBBBAA; }
+::-webkit-scrollbar-thumb { background: #232B2C; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #2E3839; }
 
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(4px); }
-  to   { opacity: 1; transform: translateY(0); }
+/* ============================================================
+   Radar root — full-bleed dark surface, content centered in a
+   1180px reading column with hairline side borders + radar glow.
+   Mirrors the News.html / History.html live-page wrappers exactly.
+   ============================================================ */
+.radar {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--fg);
+  display: flex;
+  justify-content: center;
+}
+.radar-shell {
+  position: relative;
+  width: 100%;
+  max-width: var(--content-width);
+  min-height: 100vh;
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  background-image: radial-gradient(circle at 80% 12%, rgba(95, 227, 161, 0.05), transparent 38%);
 }
 
-/* Article row animation */
-@keyframes fadeUp {
+/* ---- Nav (shared) ---- */
+.radar-nav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  height: var(--nav-height);
+  padding: 0 clamp(20px, 4vw, 40px);
+  border-bottom: 1px solid var(--line);
+  background: rgba(10, 13, 14, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.radar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--fg);
+}
+.radar-brand .wm {
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  font-size: 13px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.radar-navlinks { display: flex; gap: 26px; }
+.radar-navlinks a {
+  font-size: var(--text-xs);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--faint);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.radar-navlinks a.on { color: var(--fg); }
+.radar-navlinks a:hover { color: var(--green); }
+.radar-navlinks a:focus-visible { outline: none; color: var(--green); text-decoration: underline; text-underline-offset: 4px; }
+.radar-live { display: flex; align-items: center; gap: 7px; }
+.radar-blip {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--green); box-shadow: 0 0 8px var(--green);
+  animation: radar-pulse 1.8s ease-in-out infinite;
+}
+.radar-live .stamp {
+  font-size: var(--text-xs);
+  color: var(--fg2);
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+}
+
+/* ---- Hero (News) ---- */
+.radar-hero {
+  position: relative;
+  padding: 54px clamp(20px, 4vw, 40px) 44px;
+  border-bottom: 1px solid var(--line);
+}
+.radar-dish {
+  position: absolute;
+  top: 24px;
+  right: clamp(20px, 4vw, 36px);
+  width: 188px;
+  height: 188px;
+  opacity: 0.9;
+  pointer-events: none;
+}
+.radar-eyebrow {
+  font-size: var(--text-xs);
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--green);
+  font-weight: 500;
+}
+.radar-datestamp {
+  font-size: var(--text-xs);
+  letter-spacing: 0.14em;
+  color: var(--faint);
+  margin-top: 8px;
+}
+
+/* 今日要点 signal grid */
+.radar-sigs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px 30px;
+  margin-top: 34px;
+  /* Fill the column width, leaving room on the right for the radar dish
+     (≈188px + inset). The wider column (1180) is meant to serve this grid. */
+  max-width: calc(100% - 250px);
+}
+.radar-sig { display: flex; gap: 13px; align-items: flex-start; }
+.radar-sig-dot {
+  flex-shrink: 0;
+  margin-top: 7px;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 7px rgba(95, 227, 161, 0.7);
+}
+.radar-sig .num {
+  font-size: 10px;
+  color: var(--faint);
+  letter-spacing: 0.1em;
+}
+.radar-sig p {
+  margin: 3px 0 0;
+  font-size: var(--text-base);
+  line-height: 1.75;
+  color: var(--fg);
+  max-width: 42ch;
+}
+
+/* ---- Section (News) ---- */
+.radar-sec {
+  padding: 44px clamp(20px, 4vw, 40px);
+  border-bottom: 1px solid var(--line);
+}
+.radar-seclabel {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 30px;
+}
+.radar-seclabel .l {
+  font-size: var(--text-xs);
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--fg2);
+  font-weight: 500;
+}
+.radar-seclabel .rule { flex: 1; height: 1px; background: var(--line); }
+.radar-seclabel .c { font-size: var(--text-xs); color: var(--faint); }
+
+/* Top story */
+.radar-story {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 0 18px;
+  padding: 22px 0;
+  border-top: 1px solid var(--line);
+  transition: background 0.2s;
+}
+.radar-story:first-of-type { border-top: none; }
+.radar-story:hover { background: var(--wash); }
+.radar-gutter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+}
+.radar-score { font-size: 13px; color: var(--green); font-weight: 500; }
+.radar-bar {
+  width: 2px; flex: 1;
+  background: linear-gradient(var(--green), transparent);
+  opacity: 0.5; border-radius: 2px; min-height: 30px;
+}
+.radar-meta {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 9px; flex-wrap: wrap;
+}
+.radar-cat {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--green);
+  border: 1px solid var(--green-30);
+  padding: 2px 8px;
+  border-radius: 3px;
+}
+.radar-src { font-size: var(--text-xs); color: var(--fg2); }
+.radar-sep { width: 2px; height: 2px; border-radius: 50%; background: var(--faint); }
+.radar-ago { font-size: var(--text-xs); color: var(--amber); }
+.radar-story h3 { margin: 0 0 10px; }
+.radar-story h3 a {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1.32;
+  letter-spacing: -0.01em;
+  color: var(--fg);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.radar-story:hover h3 a { color: var(--green); }
+.radar-story .sum { margin: 0; font-size: var(--text-base); line-height: 1.7; color: var(--fg2); max-width: 60ch; }
+.radar-story .why {
+  margin: 11px 0 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--amber);
+  font-style: italic;
+  max-width: 56ch;
+  opacity: 0.92;
+}
+
+/* More signals row */
+.radar-mrow {
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  align-items: baseline;
+  gap: 14px;
+  padding: 13px 0;
+  border-top: 1px solid var(--line);
+  text-decoration: none;
+  transition: background 0.2s, padding-left 0.2s;
+}
+.radar-mrow:first-of-type { border-top: none; }
+.radar-mrow:hover { background: var(--wash); padding-left: 6px; }
+.radar-mrow .idx { font-size: var(--text-xs); color: var(--faint); }
+.radar-mrow .ttl { font-size: 14px; font-weight: 500; color: var(--fg); line-height: 1.5; transition: color 0.2s; }
+.radar-mrow:hover .ttl { color: var(--green); }
+.radar-mrow .rt { display: flex; align-items: center; gap: 9px; }
+.radar-mrow .rs { font-size: var(--text-xs); color: var(--fg2); }
+.radar-mrow .rago { font-size: var(--text-xs); color: var(--faint); }
+
+.radar-allarc {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 24px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--green);
+  text-decoration: none;
+  border: 1px solid var(--green-30);
+  padding: 9px 16px;
+  border-radius: 4px;
+  transition: gap 0.2s, background 0.2s, border-color 0.2s;
+}
+.radar-allarc:hover { gap: 13px; background: rgba(95, 227, 161, 0.06); border-color: var(--green-50); }
+
+/* ---- Footer (shared) ---- */
+.radar-foot { padding: 30px clamp(20px, 4vw, 44px); text-align: center; border-top: 1px solid var(--line); }
+.radar-foot span {
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--fg2);
+}
+
+/* ============================================================
+   History — archive rail + reading pane
+   ============================================================ */
+.radar-archive {
+  display: grid;
+  grid-template-columns: var(--rail-width) 1fr;
+}
+.radar-rail {
+  border-right: 1px solid var(--line);
+  padding: 38px 22px 60px;
+  position: sticky;
+  top: var(--nav-height);
+  align-self: start;
+  max-height: calc(100vh - var(--nav-height));
+  overflow: auto;
+}
+.radar-rail-label {
+  font-size: var(--text-xs);
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--fg2);
+  font-weight: 500;
+  margin-bottom: 22px;
+}
+.radar-arc { display: flex; flex-direction: column; gap: 2px; }
+.radar-date {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 8px 9px;
+  border-radius: 4px;
+  text-decoration: none;
+  border-left: 2px solid transparent;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+.radar-date:hover { background: rgba(95, 227, 161, 0.04); }
+.radar-date.on { background: var(--wash-active); border-left: 2px solid var(--green); }
+.radar-date .dd { font-size: 13px; color: var(--fg2); letter-spacing: 0.04em; }
+.radar-date.on .dd { color: var(--fg); }
+.radar-date .wd { font-size: 9px; letter-spacing: 0.16em; color: var(--faint); text-transform: uppercase; margin-top: 2px; }
+.radar-date .ct { margin-left: auto; font-size: var(--text-xs); color: var(--faint); }
+.radar-date.on .ct { color: var(--green); }
+
+.radar-read { padding: 44px clamp(20px, 4vw, 44px) 70px; min-width: 0; }
+/* Full-bleed reading pane (prototype); text blocks self-cap at ~62ch. */
+.radar-read-inner { width: 100%; }
+.radar-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-md);
+  margin-bottom: 26px;
+}
+.radar-head-l { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.radar-dstamp { font-size: 12px; letter-spacing: 0.12em; color: var(--faint); }
+.radar-copy {
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--fg2);
+  background: none;
+  border: 1px solid var(--line);
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.2s, border-color 0.2s;
+}
+.radar-copy:hover { color: var(--green); border-color: var(--green-30); }
+.radar-copy.done { color: var(--green); border-color: var(--green-50); }
+.radar-title {
+  margin: 0 0 18px;
+  font-size: var(--text-xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--fg);
+}
+.radar-lede {
+  margin: 0 0 40px;
+  font-size: 15.5px;
+  line-height: 1.85;
+  color: var(--fg2);
+  max-width: 90ch;
+}
+.radar-lede b { color: var(--fg); font-weight: 600; }
+
+.radar-tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--line);
+  margin: 18px 0 30px;
+}
+.radar-tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 11px 12px;
+  margin-bottom: -1px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--fg2);
+  border-bottom: 2px solid transparent;
+  transition: color 0.2s, border-color 0.2s;
+  white-space: nowrap;
+}
+.radar-tab:hover { color: var(--fg); }
+.radar-tab.on { color: var(--green); border-bottom: 2px solid var(--green); }
+.radar-tab .tc { font-size: var(--text-xs); color: var(--faint); }
+.radar-tab.on .tc { color: var(--green); }
+
+.radar-art {
+  padding: 20px 0;
+  border-top: 1px solid var(--line);
+  transition: padding-left 0.2s, background 0.2s;
+}
+.radar-art:first-of-type { border-top: none; }
+.radar-art:hover { background: var(--wash); padding-left: 6px; }
+.radar-art .am { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+.radar-art .sc { font-size: 12px; color: var(--green); font-weight: 500; }
+.radar-art .asrc { font-size: var(--text-xs); color: var(--fg2); }
+.radar-art .aen { font-size: var(--text-xs); color: var(--faint); }
+.radar-art h4 { margin: 0 0 9px; }
+.radar-art h4 a {
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--fg);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.radar-art:hover h4 a { color: var(--green); }
+.radar-art p { margin: 0; font-size: var(--text-base); line-height: 1.75; color: var(--fg2); max-width: 90ch; }
+
+.radar-empty { padding: 60px 0; text-align: center; }
+.radar-empty .e1 { font-size: 13px; color: var(--fg2); letter-spacing: 0.02em; }
+.radar-empty .e2 {
+  font-size: var(--text-xs);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-top: 10px;
+}
+
+/* ============================================================
+   Animations
+   ============================================================ */
+@keyframes radar-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.7); }
+}
+@keyframes radar-sweep { to { transform: rotate(360deg); } }
+@keyframes radar-fadeup {
   from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
+  to { opacity: 1; transform: none; }
 }
-@keyframes panelExpand {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
+.radar-scan { transform-origin: center; animation: radar-sweep 7s linear infinite; }
+.radar-fade { animation: radar-fadeup 0.35s cubic-bezier(0.25, 1, 0.5, 1); }
 
-.article-row {
-  opacity: 0;
-  animation: fadeUp 0.25s ease-out forwards;
+/* ============================================================
+   Responsive
+   ============================================================ */
+@media (max-width: 860px) {
+  .radar-sigs { grid-template-columns: 1fr; gap: 16px; max-width: none; }
+  .radar-dish { display: none; }
+  .radar-hero { padding-top: 40px; }
 }
-.panel-expand {
-  animation: panelExpand 0.18s ease-out forwards;
+@media (max-width: 540px) {
+  .radar-nav { gap: 12px; }
+  .radar-navlinks { gap: 18px; }
+  /* keep the live blip as a subtle indicator; drop the stamp to avoid overflow */
+  .radar-live .stamp { display: none; }
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .article-row, .panel-expand {
-    animation: none; opacity: 1; transform: none;
+@media (max-width: 720px) {
+  .radar-archive { grid-template-columns: 1fr; }
+  .radar-rail {
+    position: static;
+    max-height: none;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    padding: 20px clamp(20px, 4vw, 40px);
   }
-  .summary-point, .top-story, .more-row, .history-arrow, .more-row-arrow, .nav-link {
+  .radar-arc { flex-direction: row; flex-wrap: nowrap; overflow-x: auto; gap: 6px; }
+  .radar-date { flex-shrink: 0; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 72px; }
+  .radar-date .ct { margin-left: 0; }
+}
+
+/* ============================================================
+   Reduced motion
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  .radar-blip, .radar-scan, .radar-fade { animation: none !important; }
+  .radar-story, .radar-mrow, .radar-art, .radar-navlinks a,
+  .radar-date, .radar-tab, .radar-copy, .radar-allarc, .radar-story h3 a, .radar-art h4 a {
     transition: none !important;
   }
 }
-
-/* ── Digest micro-interactions ── */
-.summary-point:hover {
-  border-color: var(--accent) !important;
-  transform: translateX(2px);
-}
-
-.top-story:hover {
-  transform: translateX(3px);
-}
-.top-story-link:hover {
-  color: var(--accent-hover) !important;
-}
-
-.history-link {
-  transition: color 200ms;
-}
-.history-link:hover {
-  color: var(--accent) !important;
-}
-.history-link:hover .history-arrow {
-  transform: translateX(3px);
-}
-
-.more-row {
-  transition: background 200ms;
-}
-.more-row:hover {
-  background: rgba(0,0,0,0.015);
-}
-.more-row:hover .more-row-title {
-  color: var(--accent-hover) !important;
-}
-.more-row:hover .more-row-arrow {
-  opacity: 1 !important;
-  transform: translateX(0) !important;
-}
-
-.nav-link {
-  transition: color 200ms;
-}
-.nav-link:hover {
-  color: var(--text-body) !important;
-}
-
-/* Hide scrollbar */
-.scrollbar-hide::-webkit-scrollbar { display: none; }
-.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-
-/* Score slider */
-input[type="range"].score-slider {
-  -webkit-appearance: none; appearance: none;
-  height: 2px; background: #E8E8E6; border-radius: 1px; outline: none;
-}
-input[type="range"].score-slider::-webkit-slider-thumb {
-  -webkit-appearance: none; appearance: none;
-  width: 12px; height: 12px; border-radius: 50%;
-  background: #111; cursor: pointer;
-}
-
-/* Digest markdown — normalized with design tokens */
-.digest-content h1 {
-  font-family: var(--font-serif);
-  font-size: 1.75rem; font-weight: 700; color: var(--text-heading);
-  margin: 2rem 0 1rem; line-height: 1.2; letter-spacing: -0.02em;
-}
-.digest-content h2 {
-  font-size: var(--text-base); font-weight: 600; color: var(--text-body);
-  margin: 2.5rem 0 0.75rem; padding-bottom: 0.75rem;
-  border-bottom: 1px solid var(--border);
-}
-.digest-content h3 {
-  font-size: var(--text-sm); font-weight: 600; color: var(--text-body);
-  margin: 1.5rem 0 0.5rem;
-}
-.digest-content h4 {
-  font-size: var(--text-base); font-weight: 600; color: var(--accent);
-  margin: 1.25rem 0 0.25rem; line-height: 1.4;
-  transition: color 200ms ease;
-}
-.digest-content h4 a { color: var(--accent); text-decoration: none; }
-.digest-content h4 a:hover { color: var(--accent-hover); text-decoration: underline; text-underline-offset: 3px; }
-.digest-content .source-line {
-  font-size: var(--text-xs); color: var(--text-muted); margin-bottom: 0.75rem;
-}
-.digest-content p {
-  font-size: 0.9375rem; color: var(--text-secondary); line-height: 1.8;
-  margin-bottom: 1rem;
-}
-.digest-content a { color: var(--accent); transition: color 200ms ease; }
-.digest-content a:hover { color: var(--accent-hover); text-decoration: underline; text-underline-offset: 3px; }
-.digest-content ul {
-  list-style: disc; padding-left: 1rem; color: var(--text-secondary);
-  margin-bottom: 1rem; font-size: 0.875rem; line-height: 1.75;
-}
-.digest-content hr {
-  border: none; height: 1px; background: var(--border); margin: 2rem 0;
-}
-.digest-content blockquote {
-  border-left: 2px solid var(--border); padding-left: 1rem;
-  color: var(--text-muted); font-style: normal; margin: 1rem 0;
-  font-size: var(--text-xs);
-}
-.digest-content blockquote strong { color: var(--text-muted); font-weight: 600; }
-.digest-content code {
-  background: #EFEEE9; padding: 0.15rem 0.4rem; border-radius: 3px;
-  font-size: 0.78rem; color: var(--text-body); font-family: var(--font-mono);
-  font-weight: 400;
-}
-.digest-content strong { color: var(--text-body); font-weight: 600; }
-
-/* Legacy alias */
-.prose-light h1 { @apply text-[1.5rem] font-semibold text-[#111] mt-8 mb-4 tracking-tight leading-tight; }
-.prose-light h2 { @apply text-[1.05rem] font-semibold text-[#111] mt-10 mb-3 pb-3 border-b border-[#EBEBEA]; }
-.prose-light h3 { @apply text-[0.92rem] font-semibold text-[#111] mt-6 mb-2; }
-.prose-light h4 { @apply text-[0.95rem] font-semibold text-[#1F6C9F] mt-5 mb-1 leading-snug; }
-.prose-light .source-line { @apply text-[0.72rem] text-[#999] mb-3; }
-.prose-light p  { @apply text-[0.88rem] text-[#555] leading-[1.75] mb-4; }
-.prose-light a  { @apply text-[#1F6C9F] hover:underline underline-offset-2; }
-.prose-light ul { @apply list-disc list-outside pl-4 text-[#555] space-y-1.5 mb-4 text-[0.88rem] leading-[1.7]; }
-.prose-light hr { @apply border-[#EBEBEA] my-8; }
-.prose-light blockquote { @apply border-l-2 border-[#EAEAEA] pl-4 text-[#787774] italic py-1 my-4; }
-.prose-light code { @apply bg-[#F0EFEC] px-1.5 py-0.5 rounded text-[0.78rem] text-[#2F3437] font-mono; }
-.prose-light strong { @apply text-[#2F3437] font-semibold; }

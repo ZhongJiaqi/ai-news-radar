@@ -1,42 +1,25 @@
+import { redirect } from 'next/navigation'
 import { createPublicClient } from '@/lib/supabase'
-import DigestView from '@/components/DigestView'
-import type { Metadata } from 'next'
 
-export const revalidate = 60
+export const dynamic = 'force-dynamic'
 
-export async function generateMetadata(): Promise<Metadata> {
+export default async function HistoryIndex() {
   const supabase = createPublicClient()
   const { data } = await supabase
     .from('daily_digests')
-    .select('date, stats')
+    .select('date')
     .order('date', { ascending: false })
     .limit(1)
     .single()
 
-  const date = data?.date || '今日'
-  const total = data?.stats?.total ?? 0
-  const title = `AI RADAR 日报 ${date}`
-  const description = `${date} 全球 AI 动态 — ${total} 条资讯`
+  if (data?.date) redirect(`/history/${data.date}`)
 
-  return { title, description, openGraph: { title, description } }
-}
-
-export default async function DigestPage() {
-  const supabase = createPublicClient()
-  const { data: latest } = await supabase
-    .from('daily_digests')
-    .select('*')
-    .order('date', { ascending: false })
-    .limit(1)
-    .single()
-
-  if (!latest) {
-    return (
-      <div className="text-center py-24">
-        <p className="text-[15px] text-gray-600">暂无简报，等待首次生成</p>
+  return (
+    <div className="radar-read-inner">
+      <div className="radar-empty">
+        <div className="e1">暂无归档</div>
+        <div className="e2 mono">No Archive Yet</div>
       </div>
-    )
-  }
-
-  return <DigestView markdown={latest.content_md} date={latest.date} />
+    </div>
+  )
 }
