@@ -391,7 +391,9 @@ body {
   align-items: baseline;
   justify-content: space-between;
   gap: var(--space-md);
-  margin-bottom: 26px;
+  /* Larger bottom margin to compensate for the removed "每日 AI 简报"
+     H1, so the lede has breathing room from the eyebrow+datestamp row. */
+  margin-bottom: 44px;
 }
 .radar-head-l { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .radar-dstamp { font-size: 12px; letter-spacing: 0.12em; color: var(--faint); }

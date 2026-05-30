@@ -38,7 +38,10 @@ export default function HistoryReader({ day }: Props) {
         </button>
       </div>
 
-      <h1 className="radar-title">每日 AI 简报</h1>
+      {/* The green "Daily Briefing" eyebrow + date stamp above already
+          say the same thing visually, so the H1 is `sr-only` — kept in
+          the DOM for screen readers and SEO without the visual repeat. */}
+      <h1 className="sr-only">每日 AI 简报 · {day.date}</h1>
 
       {hasContent ? (
         <>
