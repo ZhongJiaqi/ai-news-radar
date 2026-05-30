@@ -382,7 +382,9 @@ body {
 .radar-date.on .ct { color: var(--green); }
 
 .radar-read { padding: 44px clamp(20px, 4vw, 44px) 70px; min-width: 0; }
-/* Full-bleed reading pane (prototype); text blocks self-cap at ~62ch. */
+/* Full-bleed reading pane; text blocks cap at 90ch (.radar-lede / .radar-art p).
+   Design稿原值为 62ch，2026-05-30 审计后决定以线上 90ch 为准——
+   桌面端阅读节奏更宽松，跟 1180 列宽更协调。如需回到设计稿请同步两处 max-width。 */
 .radar-read-inner { width: 100%; }
 .radar-head {
   display: flex;
