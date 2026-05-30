@@ -56,11 +56,7 @@ export async function generateDailyDigest(date: string): Promise<string> {
     return `# AI 每日简报 ${date}\n\n今日暂无数据。`
   }
 
-  // Top 30 (pre-dedup) feeds executive summary so the LLM sees the
-  // full ranked context, even if some are near-duplicates.
-  const top = enriched.slice(0, 30)
-
-  // Compute stats
+  // Compute stats (filled in below, including dedup_applied & summary_top8)
   const stats: DigestStats = {
     total: enriched.length,
     by_category: {},
@@ -73,25 +69,33 @@ export async function generateDailyDigest(date: string): Promise<string> {
     stats.by_category[a.content_category] = (stats.by_category[a.content_category] || 0) + 1
   }
 
-  // Generate executive summary from full list (before dedup)
-  const executiveSummary = await generateExecutiveSummary(top)
-
-  // Deduplicate for the markdown article list AND for top_article_ids,
-  // so /digest and /history can read by ID without redoing dedup.
+  // Dedup first — both summaries are derived from the dedup'd ranking
+  // so they match exactly what /digest and /history render.
   const deduped = await deduplicateArticles(enriched)
-  const dedupedTop = deduped.slice(0, 30)
+  const dedupedTop30 = deduped.slice(0, 30)
+  const dedupedTop8 = deduped.slice(0, 8)
 
-  // Build Markdown digest
-  const md = pangu(buildMarkdown(since, until, executiveSummary, dedupedTop, stats))
+  // Two summaries, parallel:
+  //   - top30 → markdown's `## 今日总结` → /history lede paragraph
+  //   - top8  → stats.summary_top8 → /digest's SIG grid points
+  const [summaryTop30, summaryTop8] = await Promise.all([
+    generateExecutiveSummary(dedupedTop30),
+    generateExecutiveSummary(dedupedTop8),
+  ])
+  stats.summary_top8 = summaryTop8
 
-  // Save to DB. top_article_ids now stores the post-dedup top 30
-  // (was pre-dedup before 2026-05-30). dedup_applied=true tells readers
-  // this row's IDs are already deduped; rows without the flag need a
-  // live dedup pass at read time.
+  // Build Markdown digest (the markdown summary stays = top30 so /history
+  // lede is unchanged from the reader's perspective).
+  const md = pangu(buildMarkdown(since, until, summaryTop30, dedupedTop30, stats))
+
+  // Save to DB. top_article_ids stores the post-dedup top 30 so pages
+  // can read by ID without redoing dedup; dedup_applied=true marks
+  // post-dedup rows; stats.summary_top8 is the 8-article version of
+  // the executive summary for /digest's SIG grid.
   await supabase.from('daily_digests').upsert({
     date,
     content_md: md,
-    top_article_ids: dedupedTop.map(a => a.id),
+    top_article_ids: dedupedTop30.map(a => a.id),
     stats,
     generated_at: new Date().toISOString(),
   }, { onConflict: 'date' })

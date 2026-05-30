@@ -11,13 +11,17 @@ const PAGE_DISPLAY_LIMIT = 8
 // Fallback path only — wide enough that LLM dedup still leaves 8.
 const PAGE_FALLBACK_FETCH = 20
 
+function summaryLines(raw: string): string[] {
+  return raw.split('\n').filter((l: string) => l.trim().length > 10).slice(0, 4)
+}
+
 function extractSummary(contentMd: string): string[] {
   const start = contentMd.indexOf('## 今日总结')
   if (start === -1) return []
   const end = contentMd.indexOf('\n## ', start + 1)
   const text = (end === -1 ? contentMd.slice(start) : contentMd.slice(start, end))
     .replace('## 今日总结', '').trim()
-  return text.split('\n').filter((l: string) => l.trim().length > 10).slice(0, 4)
+  return summaryLines(text)
 }
 
 async function getData() {
@@ -76,9 +80,14 @@ async function getData() {
     articles = deduped.slice(0, PAGE_DISPLAY_LIMIT)
   }
 
-  // Executive summary lines (今日要点 grid)
+  // Executive summary lines (今日要点 grid). Prefer the top-8-article
+  // summary (stats.summary_top8 from cron since 2026-05-30) so the SIG
+  // grid reflects exactly the 8 articles below. Older rows fall back
+  // to the top-30 summary embedded in content_md.
   let summary: string[] = []
-  if (cachedRow?.content_md) {
+  if (cachedRow?.stats?.summary_top8) {
+    summary = summaryLines(cachedRow.stats.summary_top8)
+  } else if (cachedRow?.content_md) {
     summary = extractSummary(cachedRow.content_md)
   }
   if (summary.length === 0 && articles.length > 0) {

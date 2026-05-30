@@ -82,6 +82,15 @@ export interface DigestStats {
    * lack this and need a live dedup pass at read time.
    */
   dedup_applied?: boolean
+  /**
+   * Executive summary derived from the *top 8* dedup'd articles
+   * — used by /digest's "今日要点" SIG grid so the grid matches
+   * what's shown below (Top Stories 3 + More Signals 5). The
+   * `## 今日总结` block in `content_md` still covers the top 30
+   * dedup'd articles (used by /history's lede). Newline-joined
+   * 4–8 short Chinese bullets (no leading "-").
+   */
+  summary_top8?: string
 }
 
 // ---- Enriched view (joined) ----
