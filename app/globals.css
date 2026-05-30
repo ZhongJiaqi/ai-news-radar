@@ -32,7 +32,7 @@
   --text-xl: 2.125rem;     /* 34px — page title */
 
   /* font stacks */
-  --font-sans: var(--font-outfit), 'Outfit', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  --font-sans: var(--font-outfit), 'Outfit', 'PingFang SC', -apple-system, BlinkMacSystemFont, 'Microsoft YaHei', 'Noto Sans SC', STHeiti, 'Helvetica Neue', sans-serif;
   --font-mono: var(--font-mono-jb), 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
 
   /* spacing */

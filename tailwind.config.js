@@ -22,7 +22,7 @@ module.exports = {
         tertiary: '#999999',
       },
       fontFamily: {
-        sans: ['var(--font-outfit)', 'Outfit', '-apple-system', 'BlinkMacSystemFont', '"PingFang SC"', '"Helvetica Neue"', 'STHeiti', '"Microsoft Yahei"', 'Tahoma', 'Simsun', 'sans-serif'],
+        sans: ['var(--font-outfit)', 'Outfit', '"PingFang SC"', '-apple-system', 'BlinkMacSystemFont', '"Microsoft YaHei"', '"Noto Sans SC"', 'STHeiti', '"Helvetica Neue"', 'sans-serif'],
         mono: ['var(--font-mono-jb)', '"JetBrains Mono"', '"SF Mono"', 'Fira Code', 'monospace'],
       },
     },
