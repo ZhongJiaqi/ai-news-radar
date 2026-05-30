@@ -37,9 +37,20 @@ export default async function HistoryDatePage({ params }: PageProps) {
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) notFound()
 
-  const day = await getHistoryDay(date)
+  const result = await getHistoryDay(date)
 
-  if (!day) {
+  if (result.status === 'error') {
+    return (
+      <div className="radar-read-inner">
+        <div className="radar-empty">
+          <div className="e1">加载失败，请刷新重试</div>
+          <div className="e2 mono">Load Failed</div>
+        </div>
+      </div>
+    )
+  }
+
+  if (result.status === 'notfound') {
     return (
       <div className="radar-read-inner">
         <div className="radar-empty">
@@ -50,5 +61,5 @@ export default async function HistoryDatePage({ params }: PageProps) {
     )
   }
 
-  return <HistoryReader day={day} />
+  return <HistoryReader day={result.day} />
 }

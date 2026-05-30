@@ -1,18 +1,23 @@
 import { createPublicClient } from '@/lib/supabase'
+import { queryWithRetry } from '@/lib/db'
 import RadarNav from '@/components/RadarNav'
 import HistoryRail from '@/components/HistoryRail'
 
 export const dynamic = 'force-dynamic'
 
+interface DigestRow { date: string; stats: { total?: number } | null }
+
 export default async function HistoryLayout({ children }: { children: React.ReactNode }) {
   const supabase = createPublicClient()
-  const { data: digests } = await supabase
-    .from('daily_digests')
-    .select('date, stats')
-    .order('date', { ascending: false })
-    .limit(7)
+  const { data: digests } = await queryWithRetry(() =>
+    supabase
+      .from('daily_digests')
+      .select('date, stats')
+      .order('date', { ascending: false })
+      .limit(7)
+  )
 
-  const entries = (digests || []).map(d => ({
+  const entries = ((digests as DigestRow[] | null) || []).map(d => ({
     date: d.date,
     total: d.stats?.total || 0,
   }))

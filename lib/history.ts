@@ -5,6 +5,7 @@
 // ======================================================
 
 import { createPublicClient } from './supabase'
+import { queryWithRetry, isNoRowsError } from './db'
 import { getDateRangeCN } from './utils/time'
 import { categoryLabel } from './i18n/categories'
 import { pangu } from './utils/pangu'
@@ -77,35 +78,51 @@ function extractLede(contentMd: string): string {
   return lede
 }
 
+/** Discriminated result so callers can tell a transient query failure apart
+ * from a genuinely missing digest, and render an honest message either way. */
+export type HistoryResult =
+  | { status: 'ok'; day: HistoryDay }
+  | { status: 'notfound' }
+  | { status: 'error' }
+
 /**
  * Build the structured reading-pane data for a given digest date.
- * Returns null when no digest row exists for that date.
+ * - 'notfound': no digest row exists for that date
+ * - 'error': a query failed after retries (distinct from notfound)
  */
-export async function getHistoryDay(date: string): Promise<HistoryDay | null> {
+export async function getHistoryDay(date: string): Promise<HistoryResult> {
   const supabase = createPublicClient()
 
-  const { data: digest } = await supabase
-    .from('daily_digests')
-    .select('date, content_md, stats')
-    .eq('date', date)
-    .single()
-
-  if (!digest) return null
+  const digestRes = await queryWithRetry(() =>
+    supabase
+      .from('daily_digests')
+      .select('date, content_md, stats')
+      .eq('date', date)
+      .single()
+  )
+  if (digestRes.error) {
+    return isNoRowsError(digestRes.error) ? { status: 'notfound' } : { status: 'error' }
+  }
+  const digest = digestRes.data as { content_md: string; stats: { total?: number } } | null
+  if (!digest) return { status: 'notfound' }
 
   const total = digest.stats?.total ?? 0
   const lede = pangu(extractLede(digest.content_md || ''))
 
   const { since, until } = windowForDate(date)
-  const { data: rows } = await supabase
-    .from('enriched_articles')
-    .select('*')
-    .gte('published_at', since)
-    .lt('published_at', until)
-    .gte('importance_score', 5)
-    .order('importance_score', { ascending: false })
-    .limit(50)
+  const rowsRes = await queryWithRetry(() =>
+    supabase
+      .from('enriched_articles')
+      .select('*')
+      .gte('published_at', since)
+      .lt('published_at', until)
+      .gte('importance_score', 5)
+      .order('importance_score', { ascending: false })
+      .limit(50)
+  )
+  if (rowsRes.error) return { status: 'error' }
 
-  const articles = (rows || []) as EnrichedArticle[]
+  const articles = (rowsRes.data || []) as EnrichedArticle[]
 
   // Group by content category, preserving score order within each group.
   const groups = new Map<ContentCategory, HistoryArticle[]>()
@@ -135,11 +152,14 @@ export async function getHistoryDay(date: string): Promise<HistoryDay | null> {
     .sort((a, b) => b.items.length - a.items.length)
 
   return {
-    date,
-    weekday: weekdayEN(date),
-    total,
-    lede,
-    copyText: digest.content_md || '',
-    categories,
+    status: 'ok',
+    day: {
+      date,
+      weekday: weekdayEN(date),
+      total,
+      lede,
+      copyText: digest.content_md || '',
+      categories,
+    },
   }
 }
