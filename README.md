@@ -15,27 +15,24 @@ Daily AI Briefing — 每日 AI 简报，帮助 AI 从业者快速了解最重�
 
 | 页面 | 功能 |
 |------|------|
-| `/digest` | Daily Briefing 摘要 + 文章列表（昨天一整天，北京时间） |
-| `/history` | 简报归档，按日期回溯查看 |
-| `/models` | 模型排行榜（编程/文本/图片/视频 4 领域 Top 3） |
+| `/digest` | Daily Briefing 今日要点 + Top Stories + More Signals（昨天一整天，北京时间） |
+| `/history` | 简报归档，按日期回溯查看（结构化分类 tab） |
+
+## 设计
+
+暗色「雷达终端」(Dark Radar Terminal) 风格：1180 居中阅读列 + 左右框线、雷达扫描动画、绿色信号 accent (`#5FE3A1`)、mono 元信息。字体：英文 **Outfit** / 数字 **JetBrains Mono** / 中文 **苹方 (PingFang SC)**。
 
 ## 数据流
 
 ```
 爬虫 (每6h) → LLM处理 (每3h) → 简报生成 (每天07:07北京时间)
     ↓              ↓                    ↓
- 37个数据源    打分/分类/摘要      Daily Briefing + 分类速览
+ 128个数据源   打分/分类/摘要      Daily Briefing + 分类速览
 ```
 
-### 数据源覆盖 (37个)
+### 数据源覆盖 (128 个)
 
-**官方博客 (10)**: OpenAI · Anthropic · Google DeepMind · Google AI · Meta AI · xAI · Mistral · NVIDIA · Hugging Face · Azure AI
-
-**媒体 (9)**: 36氪 · 量子位 · Ben's Bites · TechCrunch · CNBC · a16z · deeplearning.ai · MIT Technology Review · VentureBeat
-
-**个人/Twitter/YouTube (13)**: Karpathy · swyx · Hamel · Sam Altman · Yann LeCun · Demis Hassabis + 8 个 YouTube 频道
-
-**社区 (3)**: Hacker News · GitHub Trending · Hugging Face Trending
+以 RSS 为主（122 RSS + 2 API + 1 爬虫 + 3 Twitter），覆盖官方博客（OpenAI / Anthropic / Google DeepMind / Meta AI / xAI / Mistral / NVIDIA / Hugging Face 等）、媒体（36氪 / 量子位 / TechCrunch / CNBC / MIT Technology Review 等）、个人与社区（Hacker News / GitHub Trending / Hugging Face Trending 等）。完整清单见 `lib/crawlers/sources.ts`。
 
 > Twitter 源需要 `TWITTER_BEARER_TOKEN`
 
@@ -95,7 +92,6 @@ npm run dev
 curl -H "Authorization: Bearer <CRON_SECRET>" http://localhost:3000/api/cron/crawl
 curl -H "Authorization: Bearer <CRON_SECRET>" http://localhost:3000/api/cron/process
 curl -H "Authorization: Bearer <CRON_SECRET>" http://localhost:3000/api/cron/digest
-curl -H "Authorization: Bearer <CRON_SECRET>" http://localhost:3000/api/cron/rankings
 ```
 
 ### E2E 测试
@@ -113,7 +109,6 @@ npm run test:e2e
    - **每 6 小时**: 抓取新资讯
    - **每 3 小时**: LLM 处理 + Fallback 补全
    - **每天 23:07 UTC**: 生成每日简报
-   - **每 12 小时**: 更新模型排行榜
 
 > 所有日期计算统一使用北京时间 (UTC+8)，与服务器时区无关。
 
@@ -130,17 +125,18 @@ LLM_MODEL=（可选，覆盖默认模型）
 ## 项目结构
 
 ```
-ai-radar/
+ai-news-radar/
 ├── app/
-│   ├── digest/              # Daily Briefing 主页
-│   ├── history/             # 简报归档
-│   ├── models/              # 模型排行榜
-│   └── api/cron/            # Cron 路由 (crawl/process/digest/rankings)
-├── components/              # UI 组件
+│   ├── digest/              # Daily Briefing 主页 (News)
+│   ├── history/             # 简报归档 (按日期, 结构化)
+│   └── api/cron/            # Cron 路由 (crawl/process/digest)
+├── components/              # UI 组件 (RadarNav / HistoryReader / HistoryRail)
 ├── lib/
-│   ├── crawlers/            # 37 个数据源爬虫
+│   ├── crawlers/            # 128 个数据源爬虫
 │   ├── processor/           # LLM 处理 + 简报生成
 │   ├── llm/                 # LLM provider 层
+│   ├── history.ts           # History 结构化数据层
+│   ├── db.ts                # 查询重试封装 (queryWithRetry)
 │   └── utils/               # 工具函数 (去重/时间/pangu)
 └── supabase/migrations/     # 数据库 Schema
 ```
