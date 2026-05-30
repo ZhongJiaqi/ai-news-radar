@@ -22,8 +22,8 @@ module.exports = {
         tertiary: '#999999',
       },
       fontFamily: {
-        sans: ['var(--font-inter)', 'Inter', '-apple-system', 'BlinkMacSystemFont', '"PingFang SC"', '"Helvetica Neue"', 'STHeiti', '"Microsoft Yahei"', 'Tahoma', 'Simsun', 'sans-serif'],
-        mono: ['var(--font-ibm-plex-mono)', 'IBM Plex Mono', 'SF Mono', 'Fira Code', 'monospace'],
+        sans: ['var(--font-outfit)', 'Outfit', '-apple-system', 'BlinkMacSystemFont', '"PingFang SC"', '"Helvetica Neue"', 'STHeiti', '"Microsoft Yahei"', 'Tahoma', 'Simsun', 'sans-serif'],
+        mono: ['var(--font-mono-jb)', '"JetBrains Mono"', '"SF Mono"', 'Fira Code', 'monospace'],
       },
     },
   },
