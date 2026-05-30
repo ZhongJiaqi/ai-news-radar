@@ -28,8 +28,13 @@ export default function HistoryReader({ day }: Props) {
           <span className="radar-eyebrow">Daily Briefing</span>
           <span className="radar-dstamp mono">{day.date} · {day.weekday}</span>
         </div>
-        <button className={`radar-copy${copied ? ' done' : ''}`} onClick={copy} disabled={!day.copyText}>
-          {copied ? 'Copied' : 'Copy'}
+        <button
+          className={`radar-copy${copied ? ' done' : ''}`}
+          onClick={copy}
+          disabled={!day.copyText}
+          title="复制本日完整日报（Markdown 格式），可直接粘到微信、Notion、邮件等地方分享"
+        >
+          {copied ? 'Copied' : 'Copy as Markdown'}
         </button>
       </div>
 
