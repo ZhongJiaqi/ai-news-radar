@@ -2,7 +2,9 @@ import { redirect } from 'next/navigation'
 import { createPublicClient } from '@/lib/supabase'
 import { queryWithRetry, isNoRowsError } from '@/lib/db'
 
-export const dynamic = 'force-dynamic'
+// ISR — this only queries the latest digest date and redirects. 1h
+// stale is fine; the new daily date appears within an hour of cron.
+export const revalidate = 3600
 
 export default async function HistoryIndex() {
   const supabase = createPublicClient()

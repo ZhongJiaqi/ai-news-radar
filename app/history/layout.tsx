@@ -3,7 +3,11 @@ import { queryWithRetry } from '@/lib/db'
 import RadarNav from '@/components/RadarNav'
 import HistoryRail from '@/components/HistoryRail'
 
-export const dynamic = 'force-dynamic'
+// ISR — rail data changes at most once per day when a new digest lands.
+// `force-dynamic` here cascades to /history/[date] and silently disables
+// that page's own revalidate, so every request is a full SSR (~2-3s).
+// 1h staleness on the rail is fine for a once-a-day product.
+export const revalidate = 3600
 
 interface DigestRow { date: string; stats: { total?: number } | null }
 
