@@ -1,10 +1,17 @@
 import { createPublicClient } from '@/lib/supabase'
 import { getYesterdayRangeCN, getTodayCN } from '@/lib/utils/time'
-import { generateDailyDigest } from '@/lib/processor/digest'
+import { generateDailyDigest, deduplicateArticles } from '@/lib/processor/digest'
 import type { EnrichedArticle } from '@/lib/types'
 import DemoClient from './DemoClient'
 
 export const revalidate = 60
+
+// Page needs 8 articles (3 Top + 5 More). Fetch a wider pool so the LLM
+// dedup pass has room to drop near-duplicate event coverage and still
+// leave 8 distinct stories. 20 is well above the worst-case observed
+// dup rate (~6/8) without ballooning prompt tokens.
+const PAGE_FETCH_LIMIT = 20
+const PAGE_DISPLAY_LIMIT = 8
 
 function extractSummary(contentMd: string): string[] {
   const start = contentMd.indexOf('## 今日总结')
@@ -28,9 +35,16 @@ async function getData() {
     .lt('published_at', until)
     .gte('importance_score', 5)
     .order('importance_score', { ascending: false })
-    .limit(8)
+    .limit(PAGE_FETCH_LIMIT)
 
-  const articles = (articlesRes.data || []) as EnrichedArticle[]
+  const pool = (articlesRes.data || []) as EnrichedArticle[]
+
+  // Dedup near-duplicate event coverage (3 sources reporting the same
+  // Anthropic funding round all scored 10 → would otherwise fill Top 3).
+  // dedup is the same LLM helper used by the digest cron; it returns the
+  // input array unchanged on any error (already try/catch-wrapped inside).
+  const deduped = await deduplicateArticles(pool)
+  const articles = deduped.slice(0, PAGE_DISPLAY_LIMIT)
 
   // 查缓存：今天的 digest（覆盖昨天的文章）
   const { data: cached } = await supabase

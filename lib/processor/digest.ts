@@ -254,7 +254,7 @@ function buildMarkdown(
 
 // ---- LLM-assisted deduplication ----
 
-async function deduplicateArticles(articles: EnrichedArticle[]): Promise<EnrichedArticle[]> {
+export async function deduplicateArticles(articles: EnrichedArticle[]): Promise<EnrichedArticle[]> {
   if (articles.length <= 5) return articles
 
   const titleList = articles
