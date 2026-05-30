@@ -9,6 +9,22 @@ import type { Metadata } from 'next'
 // (every 3h / daily). Caching also rides out Supabase fetch hiccups.
 export const revalidate = 3600
 
+// Next.js 15 treats dynamic-param routes as fully dynamic UNLESS
+// generateStaticParams declares the prerender set. Without this, the
+// `revalidate` above is silently ignored and every request becomes a
+// full SSR — which is what was making /history/<date> hang 2-3s.
+// Prerender the 7 dates the History rail surfaces; anything else
+// falls back to on-demand ISR (still cached, just first-hit slow).
+export async function generateStaticParams() {
+  const supabase = createPublicClient()
+  const { data } = await supabase
+    .from('daily_digests')
+    .select('date')
+    .order('date', { ascending: false })
+    .limit(7)
+  return (data ?? []).map(d => ({ date: (d as { date: string }).date }))
+}
+
 interface PageProps {
   params: Promise<{ date: string }>
 }
