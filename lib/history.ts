@@ -9,7 +9,11 @@ import { queryWithRetry, isNoRowsError } from './db'
 import { getDateRangeCN } from './utils/time'
 import { categoryLabel } from './i18n/categories'
 import { pangu } from './utils/pangu'
-import type { EnrichedArticle, ContentCategory } from './types'
+import { deduplicateArticles } from './processor/digest'
+import type { EnrichedArticle, ContentCategory, DigestStats } from './types'
+
+const HISTORY_LIMIT = 30
+const HISTORY_FALLBACK_FETCH = 50
 
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
 
@@ -96,33 +100,59 @@ export async function getHistoryDay(date: string): Promise<HistoryResult> {
   const digestRes = await queryWithRetry(() =>
     supabase
       .from('daily_digests')
-      .select('date, content_md, stats')
+      .select('date, content_md, stats, top_article_ids')
       .eq('date', date)
       .single()
   )
   if (digestRes.error) {
     return isNoRowsError(digestRes.error) ? { status: 'notfound' } : { status: 'error' }
   }
-  const digest = digestRes.data as { content_md: string; stats: { total?: number } } | null
+  const digest = digestRes.data as
+    | { content_md: string; stats: DigestStats | null; top_article_ids: string[] | null }
+    | null
   if (!digest) return { status: 'notfound' }
 
   const total = digest.stats?.total ?? 0
   const lede = pangu(extractLede(digest.content_md || ''))
 
-  const { since, until } = windowForDate(date)
-  const rowsRes = await queryWithRetry(() =>
-    supabase
-      .from('enriched_articles')
-      .select('*')
-      .gte('published_at', since)
-      .lt('published_at', until)
-      .gte('importance_score', 5)
-      .order('importance_score', { ascending: false })
-      .limit(50)
-  )
-  if (rowsRes.error) return { status: 'error' }
+  // Fast path: cron already dedup'd and saved top 30 to top_article_ids.
+  // Fallback path (old rows without dedup_applied): live fetch + LLM dedup.
+  let articles: EnrichedArticle[] = []
 
-  const articles = (rowsRes.data || []) as EnrichedArticle[]
+  if (
+    digest.stats?.dedup_applied &&
+    digest.top_article_ids &&
+    digest.top_article_ids.length > 0
+  ) {
+    const ids = digest.top_article_ids.slice(0, HISTORY_LIMIT)
+    const byIdRes = await queryWithRetry(() =>
+      supabase.from('enriched_articles').select('*').in('id', ids)
+    )
+    if (byIdRes.error) return { status: 'error' }
+    const fetched = (byIdRes.data || []) as EnrichedArticle[]
+    const order = new Map(ids.map((id, i) => [id, i]))
+    articles = fetched
+      .filter(a => order.has(a.id))
+      .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
+  }
+
+  if (articles.length === 0) {
+    const { since, until } = windowForDate(date)
+    const rowsRes = await queryWithRetry(() =>
+      supabase
+        .from('enriched_articles')
+        .select('*')
+        .gte('published_at', since)
+        .lt('published_at', until)
+        .gte('importance_score', 5)
+        .order('importance_score', { ascending: false })
+        .limit(HISTORY_FALLBACK_FETCH)
+    )
+    if (rowsRes.error) return { status: 'error' }
+    const pool = (rowsRes.data || []) as EnrichedArticle[]
+    const deduped = await deduplicateArticles(pool)
+    articles = deduped.slice(0, HISTORY_LIMIT)
+  }
 
   // Group by content category, preserving score order within each group.
   const groups = new Map<ContentCategory, HistoryArticle[]>()

@@ -56,7 +56,8 @@ export async function generateDailyDigest(date: string): Promise<string> {
     return `# AI 每日简报 ${date}\n\n今日暂无数据。`
   }
 
-  // Top 30 for summary (before dedup, matches page.tsx query)
+  // Top 30 (pre-dedup) feeds executive summary so the LLM sees the
+  // full ranked context, even if some are near-duplicates.
   const top = enriched.slice(0, 30)
 
   // Compute stats
@@ -66,6 +67,7 @@ export async function generateDailyDigest(date: string): Promise<string> {
     avg_importance: Math.round(
       enriched.reduce((s, a) => s + a.importance_score, 0) / enriched.length * 10
     ) / 10,
+    dedup_applied: true,
   }
   for (const a of enriched) {
     stats.by_category[a.content_category] = (stats.by_category[a.content_category] || 0) + 1
@@ -74,18 +76,22 @@ export async function generateDailyDigest(date: string): Promise<string> {
   // Generate executive summary from full list (before dedup)
   const executiveSummary = await generateExecutiveSummary(top)
 
-  // Deduplicate for markdown article list only
+  // Deduplicate for the markdown article list AND for top_article_ids,
+  // so /digest and /history can read by ID without redoing dedup.
   const deduped = await deduplicateArticles(enriched)
+  const dedupedTop = deduped.slice(0, 30)
 
   // Build Markdown digest
-  const dedupedTop = deduped.slice(0, 30)
   const md = pangu(buildMarkdown(since, until, executiveSummary, dedupedTop, stats))
 
-  // Save to DB
+  // Save to DB. top_article_ids now stores the post-dedup top 30
+  // (was pre-dedup before 2026-05-30). dedup_applied=true tells readers
+  // this row's IDs are already deduped; rows without the flag need a
+  // live dedup pass at read time.
   await supabase.from('daily_digests').upsert({
     date,
     content_md: md,
-    top_article_ids: top.map(a => a.id),
+    top_article_ids: dedupedTop.map(a => a.id),
     stats,
     generated_at: new Date().toISOString(),
   }, { onConflict: 'date' })

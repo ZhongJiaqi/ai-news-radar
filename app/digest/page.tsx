@@ -1,17 +1,15 @@
 import { createPublicClient } from '@/lib/supabase'
 import { getYesterdayRangeCN, getTodayCN } from '@/lib/utils/time'
 import { generateDailyDigest, deduplicateArticles } from '@/lib/processor/digest'
-import type { EnrichedArticle } from '@/lib/types'
+import type { EnrichedArticle, DigestStats } from '@/lib/types'
 import DemoClient from './DemoClient'
 
 export const revalidate = 60
 
-// Page needs 8 articles (3 Top + 5 More). Fetch a wider pool so the LLM
-// dedup pass has room to drop near-duplicate event coverage and still
-// leave 8 distinct stories. 20 is well above the worst-case observed
-// dup rate (~6/8) without ballooning prompt tokens.
-const PAGE_FETCH_LIMIT = 20
+// Page needs 8 articles (3 Top + 5 More).
 const PAGE_DISPLAY_LIMIT = 8
+// Fallback path only — wide enough that LLM dedup still leaves 8.
+const PAGE_FALLBACK_FETCH = 20
 
 function extractSummary(contentMd: string): string[] {
   const start = contentMd.indexOf('## 今日总结')
@@ -24,42 +22,65 @@ function extractSummary(contentMd: string): string[] {
 
 async function getData() {
   const supabase = createPublicClient()
-  const { since, until } = getYesterdayRangeCN()
   const today = getTodayCN()
 
-  // 查询昨天一整天（北京时间）的文章
-  const articlesRes = await supabase
-    .from('enriched_articles')
-    .select('*')
-    .gte('published_at', since)
-    .lt('published_at', until)
-    .gte('importance_score', 5)
-    .order('importance_score', { ascending: false })
-    .limit(PAGE_FETCH_LIMIT)
-
-  const pool = (articlesRes.data || []) as EnrichedArticle[]
-
-  // Dedup near-duplicate event coverage (3 sources reporting the same
-  // Anthropic funding round all scored 10 → would otherwise fill Top 3).
-  // dedup is the same LLM helper used by the digest cron; it returns the
-  // input array unchanged on any error (already try/catch-wrapped inside).
-  const deduped = await deduplicateArticles(pool)
-  const articles = deduped.slice(0, PAGE_DISPLAY_LIMIT)
-
-  // 查缓存：今天的 digest（覆盖昨天的文章）
+  // Read today's cached digest first — its `top_article_ids` is the
+  // dedup'd top 30 (since 2026-05-30, marked by stats.dedup_applied).
+  // This is the fast path: 0 LLM calls at page render.
   const { data: cached } = await supabase
     .from('daily_digests')
-    .select('date, content_md, stats')
+    .select('date, content_md, stats, top_article_ids')
     .eq('date', today)
     .single()
 
-  let summary: string[] = []
+  const cachedRow = cached as
+    | { content_md: string | null; stats: DigestStats | null; top_article_ids: string[] | null }
+    | null
 
-  if (cached?.content_md) {
-    summary = extractSummary(cached.content_md)
+  let articles: EnrichedArticle[] = []
+
+  if (
+    cachedRow?.stats?.dedup_applied &&
+    cachedRow.top_article_ids &&
+    cachedRow.top_article_ids.length > 0
+  ) {
+    // Fast path: query enriched_articles by the cron's deduped IDs.
+    const ids = cachedRow.top_article_ids.slice(0, PAGE_DISPLAY_LIMIT)
+    const byIdRes = await supabase
+      .from('enriched_articles')
+      .select('*')
+      .in('id', ids)
+    const fetched = (byIdRes.data || []) as EnrichedArticle[]
+    // .in() doesn't preserve order — restore the cron's ranking.
+    const order = new Map(ids.map((id, i) => [id, i]))
+    articles = fetched
+      .filter(a => order.has(a.id))
+      .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
   }
 
-  // 缓存不存在或摘要提取失败，实时生成完整 digest
+  if (articles.length === 0) {
+    // Fallback path: cron hasn't generated today's digest yet (early
+    // morning before 07:07 BJT) OR the row is an older one without
+    // `dedup_applied`. Live query + dedup at render time.
+    const { since, until } = getYesterdayRangeCN()
+    const articlesRes = await supabase
+      .from('enriched_articles')
+      .select('*')
+      .gte('published_at', since)
+      .lt('published_at', until)
+      .gte('importance_score', 5)
+      .order('importance_score', { ascending: false })
+      .limit(PAGE_FALLBACK_FETCH)
+    const pool = (articlesRes.data || []) as EnrichedArticle[]
+    const deduped = await deduplicateArticles(pool)
+    articles = deduped.slice(0, PAGE_DISPLAY_LIMIT)
+  }
+
+  // Executive summary lines (今日要点 grid)
+  let summary: string[] = []
+  if (cachedRow?.content_md) {
+    summary = extractSummary(cachedRow.content_md)
+  }
   if (summary.length === 0 && articles.length > 0) {
     try {
       const fullMd = await generateDailyDigest(today)
@@ -69,11 +90,7 @@ async function getData() {
     }
   }
 
-  return {
-    articles,
-    summary,
-    digestDate: today,
-  }
+  return { articles, summary, digestDate: today }
 }
 
 export default async function DemoPage() {

@@ -76,6 +76,12 @@ export interface DigestStats {
   total: number
   by_category: Record<string, number>
   avg_importance: number
+  /**
+   * Marker set by the digest cron (since 2026-05-30) to say
+   * `top_article_ids` is the LLM-deduplicated top 30. Older rows
+   * lack this and need a live dedup pass at read time.
+   */
+  dedup_applied?: boolean
 }
 
 // ---- Enriched view (joined) ----
