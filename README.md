@@ -16,7 +16,7 @@ Daily AI Briefing — 每日 AI 简报，帮助 AI 从业者快速了解最重�
 | 页面 | 功能 |
 |------|------|
 | `/digest` | Daily Briefing 今日要点（基于前 8 篇文章的摘要） + Top Stories 3 + More Signals 5（北京时间昨天一整天） |
-| `/history/[date]` | 简报归档，按日期回溯查看（基于前 30 篇文章的 lede + 结构化分类 tab） |
+| `/archive/[date]` | 简报归档，按日期回溯查看（基于前 30 篇文章的 lede + 结构化分类 tab）。旧路径 `/history` 永久 301 至此 |
 
 页面渲染**走 fast path（0 LLM 调用）**：cron 一天一次集中跑 LLM 去重并把结果（top 30 deduped article IDs + summary_top8 + 今日总结 markdown）写进 `daily_digests`，页面按 ID 读即可。Cron 没跑过的日期 fallback 到 live LLM dedup。
 
@@ -107,11 +107,15 @@ npm run test:e2e
 
 1. 推送到 GitHub，Vercel 自动部署
 2. 配置所有环境变量
-3. Cron Jobs（GitHub Actions + Vercel）：
-   - **每 6 小时**: 抓取新资讯
-   - **每 3 小时**: LLM 处理 + Fallback 补全（默认 timeout 20 分钟）
-   - **每天 23:07 UTC**: 生成每日简报（含 dedup + summary_top8 + summary_top30）
-   - **每周一**: 数据保留（articles >90d、job_runs >30d、daily_digests >7d）
+3. Cron Jobs（GitHub Actions）：
+   - **Crawl Sources** (`crawl.yml`)：每 6h 抓取，`workflow_dispatch` 也可手动触发
+   - **Process Articles** (`process.yml`)：**事件驱动 + cron 兜底**——`crawl` 完成立刻触发（`workflow_run`），同时保留每 3h cron 作为 backup。180 min wall-clock budget，内部 drain loop 跑到队列清空或临近超时；单次 LLM 调用 60s timeout 防 hang
+   - **Generate Daily Digest** (`digest.yml`)：每天 UTC 23:07（北京 07:07）生成前一日日报，含 dedup + summary_top8 + summary_top30
+   - **Retention Cleanup** (`cleanup.yml`)：每周一清理（articles >90d、job_runs >30d、daily_digests >7d）
+
+### LLM 动态自愈链（Supabase `llm_model_health` 表）
+
+`scripts/process.ts` 启动前调 provider 的 `/v1/models` 拉模型清单 UPSERT 进 `llm_model_health`，按 `last_success_at` + `avg_latency_ms` 排序生成动态 chain。模型 quota 耗尽（403/429）自动标 `exhausted` + `exhausted_until = 次日 UTC 0 点`，下次跑前自动复活过期项。一键关闭：`LLM_DYNAMIC_CHAIN=off`。详见 `lib/llm/discovery.ts`。
 
 ### Vercel Analytics
 
