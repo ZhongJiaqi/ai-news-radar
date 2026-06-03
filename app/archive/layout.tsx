@@ -4,7 +4,7 @@ import RadarNav from '@/components/RadarNav'
 import HistoryRail from '@/components/HistoryRail'
 
 // ISR — rail data changes at most once per day when a new digest lands.
-// `force-dynamic` here cascades to /history/[date] and silently disables
+// `force-dynamic` here cascades to /archive/[date] and silently disables
 // that page's own revalidate, so every request is a full SSR (~2-3s).
 // 1h staleness on the rail is fine for a once-a-day product.
 export const revalidate = 3600
@@ -35,7 +35,7 @@ export default async function HistoryLayout({ children }: { children: React.Reac
       `}} />
       <div className="radar">
         <div className="radar-shell">
-          <RadarNav active="history" status={<span className="stamp mono">ARCHIVE · {entries.length} DAYS</span>} />
+          <RadarNav active="archive" status={<span className="stamp mono">ARCHIVE · {entries.length} DAYS</span>} />
 
           <div className="radar-archive">
             <HistoryRail entries={entries} />

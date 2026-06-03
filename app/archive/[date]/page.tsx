@@ -12,7 +12,7 @@ export const revalidate = 3600
 // Next.js 15 treats dynamic-param routes as fully dynamic UNLESS
 // generateStaticParams declares the prerender set. Without this, the
 // `revalidate` above is silently ignored and every request becomes a
-// full SSR — which is what was making /history/<date> hang 2-3s.
+// full SSR — which is what was making /archive/<date> hang 2-3s.
 // Prerender the 7 dates the History rail surfaces; anything else
 // falls back to on-demand ISR (still cached, just first-hit slow).
 export async function generateStaticParams() {

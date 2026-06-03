@@ -30,7 +30,7 @@ export default async function HistoryIndex() {
   }
 
   const date = (res.data as { date?: string } | null)?.date
-  if (date) redirect(`/history/${date}`)
+  if (date) redirect(`/archive/${date}`)
 
   // Genuinely empty archive (no rows).
   return (

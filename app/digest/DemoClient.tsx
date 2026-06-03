@@ -149,7 +149,7 @@ export default function DemoClient({ articles, summary, digestDate }: Props) {
                 </span>
               </a>
             ))}
-            <Link className="radar-allarc mono" href="/history">查看完整归档 →</Link>
+            <Link className="radar-allarc mono" href="/archive">查看完整归档 →</Link>
           </section>
         )}
 

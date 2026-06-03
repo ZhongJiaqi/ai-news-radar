@@ -16,7 +16,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     .limit(7)
 
   const digestEntries: MetadataRoute.Sitemap = (digests ?? []).map(d => ({
-    url: `${siteUrl}/history/${d.date}`,
+    url: `${siteUrl}/archive/${d.date}`,
     lastModified: new Date(`${d.date}T08:00:00+08:00`),
     changeFrequency: 'never' as const,
     priority: 0.7,

@@ -11,17 +11,17 @@ export interface RailEntry {
 
 export default function HistoryRail({ entries }: { entries: RailEntry[] }) {
   const pathname = usePathname()
-  const fromPath = pathname.match(/\/history\/(\d{4}-\d{2}-\d{2})/)?.[1]
+  const fromPath = pathname.match(/\/archive\/(\d{4}-\d{2}-\d{2})/)?.[1]
   const activeDate = fromPath || entries[0]?.date
 
   return (
     <aside className="radar-rail">
-      <div className="radar-rail-label">Archive</div>
+      <div className="radar-rail-label">Past 7 days</div>
       <nav className="radar-arc">
         {entries.map(e => (
           <Link
             key={e.date}
-            href={`/history/${e.date}`}
+            href={`/archive/${e.date}`}
             className={`radar-date${e.date === activeDate ? ' on' : ''}`}
             aria-current={e.date === activeDate ? 'page' : undefined}
           >

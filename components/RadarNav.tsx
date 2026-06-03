@@ -14,7 +14,7 @@ function RadarLogo() {
 }
 
 interface Props {
-  active: 'news' | 'history'
+  active: 'news' | 'archive'
   status: ReactNode
 }
 
@@ -27,7 +27,7 @@ export default function RadarNav({ active, status }: Props) {
       </Link>
       <div className="radar-navlinks">
         <Link href="/digest" className={active === 'news' ? 'on' : undefined}>News</Link>
-        <Link href="/history" className={active === 'history' ? 'on' : undefined}>History</Link>
+        <Link href="/archive" className={active === 'archive' ? 'on' : undefined}>Archive</Link>
       </div>
       <div className="radar-live">
         <span className="radar-blip" aria-hidden />
