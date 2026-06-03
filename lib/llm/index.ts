@@ -1,5 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk'
 
+import { createServiceClient } from '../supabase'
+import {
+  getDynamicChain,
+  markModelFailure,
+  markModelSuccess,
+} from './discovery'
+
 export type LLMProvider = 'anthropic' | 'openai-compatible'
 export type LLMTask = 'article' | 'digest'
 
@@ -114,10 +121,9 @@ function resolveConfig(task: LLMTask): ResolvedConfig {
   return { provider, apiKey, baseURL, model }
 }
 
-// LLM_MODEL_CHAIN is a comma-separated list of model IDs to try in order
-// when the primary model returns a quota / free-tier error. The first item
-// is the primary; subsequent items are fallbacks. Whitespace tolerated.
-function resolveModelChain(task: LLMTask): string[] {
+// Resolve the env-baked fallback chain. Used directly when DB lookup
+// fails and as the seed for getDynamicChain folding.
+function resolveStaticChain(task: LLMTask): string[] {
   const raw = trimOrEmpty(process.env.LLM_MODEL_CHAIN)
   const primary = resolveConfig(task).model
   if (!raw) return [primary]
@@ -134,6 +140,31 @@ function resolveModelChain(task: LLMTask): string[] {
     ordered.push(m)
   }
   return ordered
+}
+
+// Try to build a healthy chain from llm_model_health (per-model status).
+// Any DB error path falls back to the env-baked chain silently so the
+// LLM call layer never goes dark.
+async function resolveDynamicChain(task: LLMTask, provider: LLMProvider): Promise<string[]> {
+  const staticChain = resolveStaticChain(task)
+  // We only track openai-compatible providers for now — Anthropic is
+  // single-model and not part of the rotation.
+  if (provider !== 'openai-compatible') return staticChain
+  if (process.env.LLM_DYNAMIC_CHAIN === 'off') return staticChain
+  try {
+    const client = createServiceClient()
+    return await getDynamicChain(client, providerKey(), staticChain)
+  } catch {
+    return staticChain
+  }
+}
+
+// Single-provider mode for now: 'dashscope' covers DashScope-compatible
+// endpoints; everything else still uses the env chain only.
+function providerKey(): string {
+  const base = (process.env.LLM_BASE_URL || '').toLowerCase()
+  if (base.includes('dashscope.aliyuncs.com')) return 'dashscope'
+  return 'openai-compatible'
 }
 
 // Errors worth swapping models for: free-tier exhaustion, quota,
@@ -256,13 +287,35 @@ async function generateWithOpenAICompatible(config: ResolvedConfig, prompt: stri
   return ''
 }
 
+// Best-effort telemetry: if Supabase is unreachable, swallow — the LLM
+// call itself must not fail because of a health-table glitch.
+async function recordTelemetry(
+  provider: LLMProvider,
+  modelId: string,
+  outcome: { ok: true; latencyMs: number } | { ok: false; err: { status?: number; message?: string } }
+): Promise<void> {
+  if (provider !== 'openai-compatible') return
+  if (process.env.LLM_DYNAMIC_CHAIN === 'off') return
+  try {
+    const client = createServiceClient()
+    if (outcome.ok) {
+      await markModelSuccess(client, providerKey(), modelId, outcome.latencyMs)
+    } else {
+      await markModelFailure(client, providerKey(), modelId, outcome.err)
+    }
+  } catch {
+    /* telemetry must never break the request path */
+  }
+}
+
 async function generate(params: GenerateParams): Promise<GenerateResult> {
   const baseConfig = resolveConfig(params.task)
-  const chain = resolveModelChain(params.task)
+  const chain = await resolveDynamicChain(params.task, baseConfig.provider)
   const errors: string[] = []
 
   for (let i = 0; i < chain.length; i++) {
     const config: ResolvedConfig = { ...baseConfig, model: chain[i] }
+    const start = Date.now()
     try {
       const text = await callWithRetry(async () => {
         if (config.provider === 'anthropic') {
@@ -276,6 +329,7 @@ async function generate(params: GenerateParams): Promise<GenerateResult> {
           `[LLM] Falling back to model ${config.model} after ${i} exhausted upstream(s)`
         )
       }
+      await recordTelemetry(config.provider, chain[i], { ok: true, latencyMs: Date.now() - start })
       return {
         text,
         modelUsed: `${config.provider}:${config.model}`,
@@ -283,6 +337,11 @@ async function generate(params: GenerateParams): Promise<GenerateResult> {
       }
     } catch (err) {
       errors.push(`${chain[i]}: ${toErrText(err)}`)
+      const errLike = {
+        status: (err as { status?: number }).status,
+        message: toErrText(err),
+      }
+      await recordTelemetry(config.provider, chain[i], { ok: false, err: errLike })
       // Only try next model on quota / free-tier exhaustion. Other errors
       // (transient, programming, prompt) bubble up immediately.
       if (!isQuotaExhaustionError(err) || i === chain.length - 1) throw err

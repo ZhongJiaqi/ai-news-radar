@@ -2,10 +2,35 @@
 import 'dotenv/config'
 import { processUnprocessedArticles, reprocessFallbackArticles } from '../lib/processor/llm'
 import { shouldAlarmProcessRun } from '../lib/processor/outcome'
+import { createServiceClient } from '../lib/supabase'
+import { discoverModels, reviveExhaustedModels } from '../lib/llm/discovery'
+
+async function warmUpModelHealth() {
+  if (process.env.LLM_DYNAMIC_CHAIN === 'off') return
+  const base = (process.env.LLM_BASE_URL || '').toLowerCase()
+  if (!base.includes('dashscope.aliyuncs.com')) return
+  try {
+    const client = createServiceClient()
+    const provider = 'dashscope'
+    const revived = await reviveExhaustedModels(client, provider)
+    if (revived > 0) console.log(`[Process] Revived ${revived} exhausted model(s)`)
+    const ids = await discoverModels(
+      client,
+      provider,
+      process.env.LLM_BASE_URL || '',
+      process.env.LLM_API_KEY || ''
+    )
+    if (ids.length > 0) console.log(`[Process] Discovered ${ids.length} model(s) from provider`)
+  } catch (err) {
+    console.warn('[Process] Model health warm-up skipped:', err instanceof Error ? err.message : err)
+  }
+}
 
 async function main() {
   const batchSize = parseInt(process.env.BATCH_SIZE || '50', 10)
   const reprocessSize = parseInt(process.env.REPROCESS_BATCH_SIZE || '50', 10)
+
+  await warmUpModelHealth()
 
   console.log(`[Process] Starting new-article pass (batch size: ${batchSize})...`)
   const result = await processUnprocessedArticles(batchSize)
