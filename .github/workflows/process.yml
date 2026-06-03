@@ -2,7 +2,7 @@ name: Process Articles
 
 on:
   schedule:
-    - cron: '47 */3 * * *'  # Every 3 hours at :47 (30min after crawl)
+    - cron: '47 */3 * * *'  # Every 3 hours at :47 — safety net cron
   workflow_dispatch:
     inputs:
       batch_size:
@@ -17,6 +17,14 @@ on:
         description: 'Job timeout in minutes (default 20)'
         required: false
         default: '20'
+  # Event-driven trigger: pick up new articles the moment Crawl Sources
+  # finishes. Reduces "process is waiting for the next 3h cron" lag from
+  # up to 3 hours down to ~0 seconds. The cron above stays as a backup
+  # in case the workflow_run trigger ever misfires.
+  workflow_run:
+    workflows: ["Crawl Sources"]
+    types: [completed]
+    branches: [master]
 
 concurrency:
   group: process-articles
@@ -25,6 +33,10 @@ concurrency:
 jobs:
   process:
     runs-on: ubuntu-latest
+    # When triggered by workflow_run, only proceed if the upstream Crawl
+    # Sources run actually succeeded. A cancelled/failed crawl shouldn't
+    # spawn a process pass.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     timeout-minutes: ${{ fromJSON(inputs.timeout_minutes || '20') }}
     env:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
