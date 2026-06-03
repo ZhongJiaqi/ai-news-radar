@@ -125,13 +125,42 @@ export async function processArticle(
 
 // ---- Batch processor ----
 
-export async function processUnprocessedArticles(batchSize = 20): Promise<{
+export interface ProcessOptions {
+  /** Wall-clock deadline (Date.now() ms). Loop stops pulling chunks past this. */
+  deadlineMs?: number
+  /** Articles pulled per chunk inside the loop. Default 20. */
+  chunkSize?: number
+  /** Hard ceiling on total articles attempted this run. Default Infinity. */
+  maxArticles?: number
+}
+
+/**
+ * Drain the unprocessed-articles queue. With no options, behaves like a
+ * one-shot batch (legacy). With `deadlineMs` / `maxArticles`, loops in
+ * small chunks until the queue is empty, the deadline passes, or the cap
+ * is hit — whichever comes first.
+ *
+ * Passing a plain number is the legacy signature: `processUnprocessedArticles(50)`
+ * == `processUnprocessedArticles({ chunkSize: 50, maxArticles: 50 })`,
+ * preserved so the Vercel cron HTTP route keeps working.
+ */
+export async function processUnprocessedArticles(
+  options: ProcessOptions | number = {}
+): Promise<{
   processed: number
   failed: number
 }> {
+  const opts: ProcessOptions = typeof options === 'number'
+    ? { chunkSize: options, maxArticles: options }
+    : options
+
+  const deadlineMs = opts.deadlineMs ?? Number.POSITIVE_INFINITY
+  const chunkSize = opts.chunkSize ?? 20
+  const maxArticles = opts.maxArticles ?? Number.POSITIVE_INFINITY
+
   const supabase = createServiceClient()
 
-  // Log job start
+  // Log job start — one row per run, not per chunk.
   const { data: job } = await supabase
     .from('job_runs')
     .insert({ job_type: 'process', status: 'running' })
@@ -139,82 +168,104 @@ export async function processUnprocessedArticles(batchSize = 20): Promise<{
     .single()
   const jobId = job?.id
 
-  const { data: articles, error } = await supabase
-    .from('articles')
-    .select('id, title, content, source_slug, process_attempts')
-    .eq('is_processed', false)
-    .is('skip_reason', null)
-    .lt('process_attempts', 3)
-    .order('published_at', { ascending: false })
-    .limit(batchSize)
-
-  if (error) throw new Error(`Fetch error: ${error.message}`)
-  if (!articles || articles.length === 0) return { processed: 0, failed: 0 }
-
-  console.log(`[Processor] Processing ${articles.length} articles...`)
-
   let processed = 0
   let failed = 0
 
-  for (const article of articles) {
-    try {
-      const src = SOURCE_CONFIGS.find(s => s.slug === article.source_slug)
-      const sourceCategory = src?.category || 'media'
-      const { result, modelUsed } = await processArticle(
-        article.title,
-        article.content || article.title,
-        sourceCategory
-      )
+  // Main drain loop. Each iteration pulls one chunk and processes it.
+  while (true) {
+    if (Date.now() >= deadlineMs) {
+      console.log(`[Processor] Deadline reached, stopping drain loop`)
+      break
+    }
+    const attemptedSoFar = processed + failed
+    if (attemptedSoFar >= maxArticles) break
 
-      const { error: insertError } = await supabase
-        .from('processed_articles')
-        .insert({
-          article_id: article.id,
-          summary_zh: result.summary_zh,
-          category: result.category,
-          tags: result.tags,
-          importance_score: result.importance_score,
-          why_it_matters: result.why_it_matters,
-          model_used: modelUsed,
-          is_fallback: modelUsed === 'fallback',
-        })
+    const remaining = maxArticles - attemptedSoFar
+    const thisChunk = Math.min(chunkSize, remaining)
 
-      if (insertError) {
-        // 23505 = a processed_articles row already exists for this article.
-        // It was processed before; only articles.is_processed is out of sync.
-        // Reconcile the flag and count it as processed — not a failure.
-        if (isDuplicateKeyError(insertError)) {
-          await supabase
-            .from('articles')
-            .update({ is_processed: true })
-            .eq('id', article.id)
-          processed++
+    const { data: articles, error } = await supabase
+      .from('articles')
+      .select('id, title, content, source_slug, process_attempts')
+      .eq('is_processed', false)
+      .is('skip_reason', null)
+      .lt('process_attempts', 3)
+      .order('published_at', { ascending: false })
+      .limit(thisChunk)
+
+    if (error) throw new Error(`Fetch error: ${error.message}`)
+    if (!articles || articles.length === 0) {
+      // Queue drained.
+      break
+    }
+
+    console.log(`[Processor] Processing chunk of ${articles.length} articles (total so far: ${processed}/${attemptedSoFar})...`)
+
+    for (const article of articles) {
+      // Stop mid-chunk too if we crossed the deadline. The article we
+      // skip stays unprocessed and the next run picks it up.
+      if (Date.now() >= deadlineMs) {
+        console.log(`[Processor] Deadline reached mid-chunk, stopping`)
+        break
+      }
+      try {
+        const src = SOURCE_CONFIGS.find(s => s.slug === article.source_slug)
+        const sourceCategory = src?.category || 'media'
+        const { result, modelUsed } = await processArticle(
+          article.title,
+          article.content || article.title,
+          sourceCategory
+        )
+
+        const { error: insertError } = await supabase
+          .from('processed_articles')
+          .insert({
+            article_id: article.id,
+            summary_zh: result.summary_zh,
+            category: result.category,
+            tags: result.tags,
+            importance_score: result.importance_score,
+            why_it_matters: result.why_it_matters,
+            model_used: modelUsed,
+            is_fallback: modelUsed === 'fallback',
+          })
+
+        if (insertError) {
+          // 23505 = a processed_articles row already exists for this article.
+          // It was processed before; only articles.is_processed is out of sync.
+          // Reconcile the flag and count it as processed — not a failure.
+          if (isDuplicateKeyError(insertError)) {
+            await supabase
+              .from('articles')
+              .update({ is_processed: true })
+              .eq('id', article.id)
+            processed++
+            continue
+          }
+          console.error(`[Processor] Insert error for ${article.id}:`, insertError)
+          failed++
           continue
         }
-        console.error(`[Processor] Insert error for ${article.id}:`, insertError)
+
+        await supabase
+          .from('articles')
+          .update({ is_processed: true })
+          .eq('id', article.id)
+
+        processed++
+        await new Promise(r => setTimeout(r, 200))
+      } catch (err) {
+        console.error(`[Processor] Failed for article ${article.id}:`, err)
+        const attempts = (article.process_attempts || 0) + 1
+        const update: Record<string, unknown> = {
+          process_attempts: attempts,
+          last_error: String(err).slice(0, 500),
+        }
+        if (attempts >= 3) {
+          update.skip_reason = `Failed after ${attempts} attempts: ${String(err).slice(0, 200)}`
+        }
+        await supabase.from('articles').update(update).eq('id', article.id)
         failed++
-        continue
       }
-
-      await supabase
-        .from('articles')
-        .update({ is_processed: true })
-        .eq('id', article.id)
-
-      processed++
-      await new Promise(r => setTimeout(r, 200))
-    } catch (err) {
-      console.error(`[Processor] Failed for article ${article.id}:`, err)
-      const attempts = (article.process_attempts || 0) + 1
-      const update: Record<string, unknown> = {
-        process_attempts: attempts,
-        last_error: String(err).slice(0, 500),
-      }
-      if (attempts >= 3) {
-        update.skip_reason = `Failed after ${attempts} attempts: ${String(err).slice(0, 200)}`
-      }
-      await supabase.from('articles').update(update).eq('id', article.id)
-      failed++
     }
   }
 

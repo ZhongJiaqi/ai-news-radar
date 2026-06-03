@@ -27,18 +27,26 @@ async function warmUpModelHealth() {
 }
 
 async function main() {
-  const batchSize = parseInt(process.env.BATCH_SIZE || '50', 10)
-  const reprocessSize = parseInt(process.env.REPROCESS_BATCH_SIZE || '50', 10)
-
   await warmUpModelHealth()
 
-  console.log(`[Process] Starting new-article pass (batch size: ${batchSize})...`)
-  const result = await processUnprocessedArticles(batchSize)
+  // Drain mode: pull articles in 20-piece chunks until either the queue
+  // is empty or we approach the job's wall-clock timeout. The 5-minute
+  // safety margin leaves room for the reprocess pass and the job-runs
+  // cleanup writes to land before the runner kills us.
+  const jobBudgetMs = parseInt(process.env.JOB_BUDGET_MINUTES || '180', 10) * 60_000
+  const safetyMarginMs = 5 * 60_000
+  const newPassDeadline = Date.now() + (jobBudgetMs - safetyMarginMs - 5 * 60_000) // reserve 5min for reprocess
+  const reprocessDeadline = Date.now() + (jobBudgetMs - safetyMarginMs)
+
+  console.log(`[Process] Starting new-article drain pass (deadline in ${Math.round((newPassDeadline - Date.now())/60_000)}min)...`)
+  const result = await processUnprocessedArticles({ deadlineMs: newPassDeadline, chunkSize: 20 })
   const total = result.processed + result.failed
   const successRate = total > 0 ? Math.round((result.processed / total) * 100) : 100
   console.log(`[Process] Done: ${result.processed} processed, ${result.failed} failed (${successRate}% success rate)`)
 
-  console.log(`[Reprocess] Starting fallback retry pass (batch size: ${reprocessSize})...`)
+  // Reprocess remains small-batch — fallback rows are rare (typically <10).
+  const reprocessSize = parseInt(process.env.REPROCESS_BATCH_SIZE || '50', 10)
+  console.log(`[Reprocess] Starting fallback retry pass (batch size: ${reprocessSize}, deadline in ${Math.round((reprocessDeadline - Date.now())/60_000)}min)...`)
   const reprocessResult = await reprocessFallbackArticles(reprocessSize)
   console.log(`[Reprocess] Done: ${reprocessResult.reprocessed} reprocessed, ${reprocessResult.failed} failed`)
 

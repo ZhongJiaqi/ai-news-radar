@@ -219,10 +219,18 @@ async function callWithRetry<T>(
   throw new Error('Unreachable')
 }
 
+// Hard ceiling on a single LLM call. Picked to be much larger than the
+// observed ~32s/article so legitimate slow calls survive, while a
+// half-open TCP connection or a hung upstream can no longer hold the
+// process hostage for hours. The outer GH job timeout (180min) then
+// becomes a real last-resort backstop instead of the only one.
+const LLM_CALL_TIMEOUT_MS = 60_000
+
 async function generateWithAnthropic(config: ResolvedConfig, prompt: string, maxTokens: number): Promise<string> {
   const anthropic = new Anthropic({
     apiKey: config.apiKey,
     baseURL: config.baseURL,
+    timeout: LLM_CALL_TIMEOUT_MS,
   })
 
   const response = await anthropic.messages.create({
@@ -246,45 +254,62 @@ async function generateWithAnthropic(config: ResolvedConfig, prompt: string, max
 }
 
 async function generateWithOpenAICompatible(config: ResolvedConfig, prompt: string, maxTokens: number): Promise<string> {
-  const response = await fetch(`${config.baseURL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: config.model,
-      max_tokens: maxTokens,
-      temperature: 0.2,
-      messages: [
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-    }),
-  })
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), LLM_CALL_TIMEOUT_MS)
+  try {
+    const response = await fetch(`${config.baseURL}/chat/completions`, {
+      signal: controller.signal,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: config.model,
+        max_tokens: maxTokens,
+        temperature: 0.2,
+        messages: [
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+      }),
+    })
 
-  if (!response.ok) {
-    const body = await response.text()
-    const err = new Error(`OpenAI-compatible request failed (${response.status}): ${body.slice(0, 300)}`) as Error & { status?: number }
-    err.status = response.status
+    if (!response.ok) {
+      const body = await response.text()
+      const err = new Error(`OpenAI-compatible request failed (${response.status}): ${body.slice(0, 300)}`) as Error & { status?: number }
+      err.status = response.status
+      throw err
+    }
+
+    const payload = await response.json() as {
+      choices?: Array<{ message?: { content?: string | Array<{ type?: string; text?: string }> } }>
+    }
+
+    const content = payload.choices?.[0]?.message?.content
+    if (typeof content === 'string') return content.trim()
+    if (Array.isArray(content)) {
+      return content
+        .map(part => typeof part?.text === 'string' ? part.text : '')
+        .join('')
+        .trim()
+    }
+    return ''
+  } catch (err) {
+    // Surface AbortError as a clear timeout message so the caller can
+    // treat it like any other transient upstream failure (and the model
+    // chain falls through to the next candidate).
+    if (err instanceof Error && err.name === 'AbortError') {
+      const e = new Error(`OpenAI-compatible request timed out after ${LLM_CALL_TIMEOUT_MS}ms`) as Error & { status?: number }
+      e.status = 408
+      throw e
+    }
     throw err
+  } finally {
+    clearTimeout(timeoutId)
   }
-
-  const payload = await response.json() as {
-    choices?: Array<{ message?: { content?: string | Array<{ type?: string; text?: string }> } }>
-  }
-
-  const content = payload.choices?.[0]?.message?.content
-  if (typeof content === 'string') return content.trim()
-  if (Array.isArray(content)) {
-    return content
-      .map(part => typeof part?.text === 'string' ? part.text : '')
-      .join('')
-      .trim()
-  }
-  return ''
 }
 
 // Best-effort telemetry: if Supabase is unreachable, swallow — the LLM
