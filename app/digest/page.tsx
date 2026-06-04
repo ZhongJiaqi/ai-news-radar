@@ -12,7 +12,7 @@ const PAGE_DISPLAY_LIMIT = 8
 const FALLBACK_LOOKBACK_DAYS = 7
 
 function summaryLines(raw: string): string[] {
-  return raw.split('\n').filter((l: string) => l.trim().length > 10).slice(0, 8)
+  return raw.split('\n').filter((l: string) => l.trim().length > 10).slice(0, 4)
 }
 
 /**
