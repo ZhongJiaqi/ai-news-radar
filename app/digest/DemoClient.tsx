@@ -58,12 +58,18 @@ interface Props {
   articles: EnrichedArticle[]
   summary: string[]
   digestDate: string | null
+  pendingReason?: 'cron-pending' | 'cron-degraded' | null
 }
 
-export default function DemoClient({ articles, summary, digestDate }: Props) {
+export default function DemoClient({ articles, summary, digestDate, pendingReason }: Props) {
   const topArticles = articles.slice(0, 3)
   const restArticles = articles.slice(3, 8)
   const dateStr = digestDate || new Date().toISOString().slice(0, 10)
+  const pendingNote = pendingReason === 'cron-degraded'
+    ? '今日 briefing 仍在生成，下方为最近一期完整简报'
+    : pendingReason === 'cron-pending'
+      ? '今日 briefing 仍在生成，下方为最近一期完整简报'
+      : null
 
   return (
     <div className="radar">
@@ -75,6 +81,24 @@ export default function DemoClient({ articles, summary, digestDate }: Props) {
           <RadarDish />
           <div className="radar-eyebrow">Daily Briefing</div>
           <div className="radar-datestamp mono">{dateStr} · 北京时间 07:07 生成</div>
+          {pendingNote && (
+            <div
+              className="mono"
+              style={{
+                marginTop: 12,
+                padding: '8px 14px',
+                fontSize: '0.72rem',
+                letterSpacing: '0.08em',
+                color: AMBER,
+                border: '1px solid rgba(232,179,85,0.4)',
+                borderRadius: 4,
+                background: 'rgba(232,179,85,0.06)',
+                display: 'inline-block',
+              }}
+            >
+              ◷ {pendingNote}
+            </div>
+          )}
 
           {summary.length > 0 ? (
             <div className="radar-sigs">

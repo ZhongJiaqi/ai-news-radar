@@ -219,18 +219,26 @@ async function callWithRetry<T>(
   throw new Error('Unreachable')
 }
 
-// Hard ceiling on a single LLM call. Picked to be much larger than the
-// observed ~32s/article so legitimate slow calls survive, while a
-// half-open TCP connection or a hung upstream can no longer hold the
-// process hostage for hours. The outer GH job timeout (180min) then
-// becomes a real last-resort backstop instead of the only one.
-const LLM_CALL_TIMEOUT_MS = 60_000
+// Hard ceiling on a single LLM call, per task. article uses 60s — sized
+// for short summaries on ~32s/article models. digest covers dedup and
+// executive-summary calls whose outputs are 5-10x longer (4-8 bullet
+// points + 30-article dedup lists), and on the same models legitimately
+// take 90-150s; 60s was causing every digest run to timeout into a hard
+// fallback single-paragraph summary, blanking the SIG grid on /digest.
+const TIMEOUT_BY_TASK: Record<LLMTask, number> = {
+  article: 60_000,
+  digest: 180_000,
+}
 
-async function generateWithAnthropic(config: ResolvedConfig, prompt: string, maxTokens: number): Promise<string> {
+function timeoutForTask(task: LLMTask): number {
+  return TIMEOUT_BY_TASK[task] ?? 60_000
+}
+
+async function generateWithAnthropic(config: ResolvedConfig, prompt: string, maxTokens: number, timeoutMs: number): Promise<string> {
   const anthropic = new Anthropic({
     apiKey: config.apiKey,
     baseURL: config.baseURL,
-    timeout: LLM_CALL_TIMEOUT_MS,
+    timeout: timeoutMs,
   })
 
   const response = await anthropic.messages.create({
@@ -253,9 +261,9 @@ async function generateWithAnthropic(config: ResolvedConfig, prompt: string, max
   return block?.type === 'text' ? block.text.trim() : ''
 }
 
-async function generateWithOpenAICompatible(config: ResolvedConfig, prompt: string, maxTokens: number): Promise<string> {
+async function generateWithOpenAICompatible(config: ResolvedConfig, prompt: string, maxTokens: number, timeoutMs: number): Promise<string> {
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), LLM_CALL_TIMEOUT_MS)
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
   try {
     const response = await fetch(`${config.baseURL}/chat/completions`, {
       signal: controller.signal,
@@ -302,7 +310,7 @@ async function generateWithOpenAICompatible(config: ResolvedConfig, prompt: stri
     // treat it like any other transient upstream failure (and the model
     // chain falls through to the next candidate).
     if (err instanceof Error && err.name === 'AbortError') {
-      const e = new Error(`OpenAI-compatible request timed out after ${LLM_CALL_TIMEOUT_MS}ms`) as Error & { status?: number }
+      const e = new Error(`OpenAI-compatible request timed out after ${timeoutMs}ms`) as Error & { status?: number }
       e.status = 408
       throw e
     }
@@ -338,15 +346,16 @@ async function generate(params: GenerateParams): Promise<GenerateResult> {
   const chain = await resolveDynamicChain(params.task, baseConfig.provider)
   const errors: string[] = []
 
+  const timeoutMs = timeoutForTask(params.task)
   for (let i = 0; i < chain.length; i++) {
     const config: ResolvedConfig = { ...baseConfig, model: chain[i] }
     const start = Date.now()
     try {
       const text = await callWithRetry(async () => {
         if (config.provider === 'anthropic') {
-          return generateWithAnthropic(config, params.prompt, params.maxTokens)
+          return generateWithAnthropic(config, params.prompt, params.maxTokens, timeoutMs)
         }
-        return generateWithOpenAICompatible(config, params.prompt, params.maxTokens)
+        return generateWithOpenAICompatible(config, params.prompt, params.maxTokens, timeoutMs)
       })
       if (!text) throw new Error('LLM returned empty content')
       if (i > 0) {
