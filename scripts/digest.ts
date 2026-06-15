@@ -1,17 +1,56 @@
-// scripts/digest.ts — Standalone daily digest script for GitHub Actions
+// scripts/digest.ts — Standalone daily digest script for GitHub Actions.
+//
+// Triggers:
+// - schedule cron (23:07 UTC) — daily safety net.
+// - workflow_dispatch — manual, optionally with `date` override; always regenerates.
+// - workflow_run on "Process Articles" completed — event-driven catch-up so a
+//   delayed cron can't leave today's briefing on the hard-fallback paragraph.
+//
+// To keep the workflow_run path cheap, this script skips regeneration when
+// today's row is already "usable" (real multi-bullet summary + non-empty
+// top_article_ids). FORCE_DIGEST=true bypasses the skip; passing an explicit
+// date argument also bypasses (manual override).
+
 import 'dotenv/config'
 import { generateDailyDigest } from '../lib/processor/digest'
 import { getTodayCN } from '../lib/utils/time'
+import { isUsableSummary } from '../lib/utils/digestSummary'
+import { createServiceClient } from '../lib/supabase'
+
+async function isAlreadyFinalized(date: string): Promise<boolean> {
+  const supabase = createServiceClient()
+  const { data, error } = await supabase
+    .from('daily_digests')
+    .select('top_article_ids, stats')
+    .eq('date', date)
+    .maybeSingle()
+  if (error) {
+    console.warn(`[Digest] Check existing row failed (non-fatal): ${error.message}`)
+    return false
+  }
+  if (!data) return false
+  const stats = data.stats as { summary_top8?: string | null } | null
+  const ids = (data.top_article_ids as string[] | null) || []
+  return isUsableSummary(stats?.summary_top8) && ids.length > 0
+}
 
 async function main() {
-  const date = process.argv[2] || getTodayCN()
-  console.log(`[Digest] Generating for ${date}...`)
+  const overrideDate = process.argv[2]
+  const date = overrideDate || getTodayCN()
+  const force = process.env.FORCE_DIGEST === 'true' || Boolean(overrideDate)
+
+  if (!force && (await isAlreadyFinalized(date))) {
+    console.log(`[Digest] ${date} already finalized (usable summary + IDs present), skipping.`)
+    process.exit(0)
+  }
+
+  console.log(`[Digest] Generating for ${date}${force ? ' (force)' : ''}...`)
   const md = await generateDailyDigest(date)
   console.log(`[Digest] Done (${md.length} chars)`)
   process.exit(0)
 }
 
-main().catch(err => {
+main().catch((err) => {
   console.error('[Digest] Fatal error:', err)
   process.exit(1)
 })

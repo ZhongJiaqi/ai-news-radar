@@ -2,16 +2,35 @@ name: Generate Daily Digest
 
 on:
   schedule:
-    - cron: '7 23 * * *'  # Daily at 23:07 UTC
+    - cron: '7 23 * * *'  # Daily at 23:07 UTC — safety-net cron
   workflow_dispatch:
     inputs:
       date:
         description: 'Override date (YYYY-MM-DD)'
         required: false
+  # Event-driven catch-up: pick up the moment Process Articles
+  # finishes. GH cron has been observed to slip 60-150min, which
+  # left the 23:07 UTC slot landing on a hard-fallback paragraph
+  # (the original digest single-block-SIG bug). The script does
+  # an idempotent skip when today's row is already finalized, so
+  # the high-frequency process trigger only does real LLM work
+  # when there's actually something to fix.
+  workflow_run:
+    workflows: ["Process Articles"]
+    types: [completed]
+    branches: [master]
+
+concurrency:
+  group: generate-daily-digest
+  cancel-in-progress: false
 
 jobs:
   digest:
     runs-on: ubuntu-latest
+    # When triggered by workflow_run, only proceed if the upstream
+    # Process Articles run actually succeeded. cancelled/failed
+    # process passes shouldn't spawn a digest attempt.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     timeout-minutes: 10
     env:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
@@ -21,6 +40,10 @@ jobs:
       LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
       LLM_MODEL: ${{ secrets.LLM_MODEL }}
       LLM_MODEL_CHAIN: ${{ secrets.LLM_MODEL_CHAIN }}
+      # workflow_dispatch (manual click) → always regenerate, even if
+      # today's row is already usable. cron + workflow_run leave this
+      # empty, so the script's idempotent skip kicks in.
+      FORCE_DIGEST: ${{ github.event_name == 'workflow_dispatch' && 'true' || '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
