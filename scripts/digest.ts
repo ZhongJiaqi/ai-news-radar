@@ -16,6 +16,7 @@ import { generateDailyDigest } from '../lib/processor/digest'
 import { getTodayCN } from '../lib/utils/time'
 import { isUsableSummary } from '../lib/utils/digestSummary'
 import { createServiceClient } from '../lib/supabase'
+import { pushLarkDigest } from '../lib/notify/lark'
 
 async function isAlreadyFinalized(date: string): Promise<boolean> {
   const supabase = createServiceClient()
@@ -47,6 +48,21 @@ async function main() {
   console.log(`[Digest] Generating for ${date}${force ? ' (force)' : ''}...`)
   const md = await generateDailyDigest(date)
   console.log(`[Digest] Done (${md.length} chars)`)
+
+  // Push to Lark only after a fresh generate. The idempotent-skip path
+  // above already exited before we got here, so we never double-send
+  // when process->workflow_run fires multiple times the same day.
+  // LARK_WEBHOOK_URL unset → silently skipped inside pushLarkDigest.
+  // Best-effort: any failure inside pushLarkDigest is caught and logged,
+  // never reaches us, so it can't fail the digest job.
+  try {
+    await pushLarkDigest(createServiceClient(), date, process.env.LARK_WEBHOOK_URL)
+  } catch (err) {
+    console.warn(
+      `[Digest] Lark push wrapper threw (non-fatal): ${err instanceof Error ? err.message : String(err)}`
+    )
+  }
+
   process.exit(0)
 }
 

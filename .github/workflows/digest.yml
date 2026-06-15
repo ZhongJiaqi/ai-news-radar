@@ -40,6 +40,10 @@ jobs:
       LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
       LLM_MODEL: ${{ secrets.LLM_MODEL }}
       LLM_MODEL_CHAIN: ${{ secrets.LLM_MODEL_CHAIN }}
+      # Optional. When set, pushLarkDigest sends an interactive card to
+      # the configured Feishu bot webhook after generateDailyDigest
+      # writes a fresh row. Unset → push is silently skipped.
+      LARK_WEBHOOK_URL: ${{ secrets.LARK_WEBHOOK_URL }}
       # workflow_dispatch (manual click) → always regenerate, even if
       # today's row is already usable. cron + workflow_run leave this
       # empty, so the script's idempotent skip kicks in.
