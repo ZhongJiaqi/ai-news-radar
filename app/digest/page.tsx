@@ -1,5 +1,6 @@
 import { createPublicClient } from '@/lib/supabase'
 import { getTodayCN } from '@/lib/utils/time'
+import { isUsableSummary, summaryLines } from '@/lib/utils/digestSummary'
 import type { EnrichedArticle, DigestStats } from '@/lib/types'
 import DemoClient from './DemoClient'
 
@@ -10,22 +11,6 @@ const PAGE_DISPLAY_LIMIT = 8
 // How far back to look for a usable finalized briefing when today's
 // row is missing or only contains the hard-fallback summary.
 const FALLBACK_LOOKBACK_DAYS = 7
-
-function summaryLines(raw: string): string[] {
-  return raw.split('\n').filter((l: string) => l.trim().length > 10).slice(0, 4)
-}
-
-/**
- * A briefing row is "usable" only when its summary survived the LLM call
- * and got split into real bullet points. When the LLM timed out the cron
- * writes a hard-fallback single paragraph ("今日共收录 N 条 AI 资讯。
- * 重点包括：..."), which would render as one giant SIG card — uglier
- * than showing yesterday's finalized briefing.
- */
-function isUsableSummary(raw: string | null | undefined): boolean {
-  if (!raw) return false
-  return summaryLines(raw).length >= 2
-}
 
 type DigestRow = {
   date: string
