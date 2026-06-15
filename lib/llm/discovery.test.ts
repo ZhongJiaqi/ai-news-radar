@@ -4,6 +4,7 @@ import test from 'node:test'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 import {
+  countAvailableModels,
   discoverModels,
   getDynamicChain,
   markModelFailure,
@@ -27,6 +28,7 @@ type CapturedCall = {
 interface MockResponse {
   data?: unknown
   error?: unknown
+  count?: number | null
 }
 
 function makeMockClient(responses: {
@@ -43,7 +45,7 @@ function makeMockClient(responses: {
     const resolver = () => {
       const r = responses[op]
       const resp = typeof r === 'function' ? r(captured) : r
-      return Promise.resolve(resp || { data: null, error: null })
+      return Promise.resolve(resp || { data: null, error: null, count: null })
     }
 
     const chain: any = {
@@ -61,7 +63,7 @@ function makeMockClient(responses: {
       limit(_n: number) {
         return chain
       },
-      select(_cols?: string) {
+      select(_cols?: string, _options?: Record<string, unknown>) {
         return chain
       },
       maybeSingle() {
@@ -80,7 +82,8 @@ function makeMockClient(responses: {
   const client = {
     from(table: string) {
       return {
-        select: (cols?: string) => builder(table, 'select', cols),
+        select: (cols?: string, options?: Record<string, unknown>) =>
+          builder(table, 'select', cols, options),
         upsert: (payload: unknown, options?: Record<string, unknown>) =>
           builder(table, 'upsert', payload, options),
         update: (payload: unknown) => builder(table, 'update', payload),
@@ -381,4 +384,55 @@ test('probeModel: 403 quota → marks exhausted', async () => {
   } finally {
     globalThis.fetch = originalFetch
   }
+})
+
+test('probeModel: fetch throws (abort/network) → marks broken', async () => {
+  const { client, calls } = makeMockClient({
+    select: { data: null },
+    upsert: { data: null },
+  })
+
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async () => {
+    const err = new Error('The operation was aborted.')
+    ;(err as Error & { name?: string }).name = 'AbortError'
+    throw err
+  }) as typeof globalThis.fetch
+
+  try {
+    const status = await probeModel(
+      client,
+      'dashscope',
+      'https://dashscope.aliyuncs.com/compatible-mode/v1',
+      'sk-fake',
+      'qwen-plus'
+    )
+    assert.equal(status, 'broken')
+    const payload = (calls.find(c => c.op === 'upsert')!.payload) as Record<string, unknown>
+    assert.ok(payload.last_error_at, 'last_error_at written')
+    assert.ok(payload.failure_count, 'failure_count bumped')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+// ----------------- countAvailableModels -----------------
+
+test('countAvailableModels: returns the count from supabase query', async () => {
+  const { client, calls } = makeMockClient({
+    select: { data: null, error: null, count: 12 },
+  })
+  const n = await countAvailableModels(client, 'dashscope')
+  assert.equal(n, 12)
+  const sel = calls.find(c => c.op === 'select')!
+  assert.equal(sel.filters.provider, 'dashscope')
+  assert.equal(sel.filters.status, 'available')
+})
+
+test('countAvailableModels: returns 0 when count is null', async () => {
+  const { client } = makeMockClient({
+    select: { data: null, error: null, count: null },
+  })
+  const n = await countAvailableModels(client, 'dashscope')
+  assert.equal(n, 0)
 })

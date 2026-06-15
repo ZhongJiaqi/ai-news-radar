@@ -3,7 +3,22 @@ import 'dotenv/config'
 import { processUnprocessedArticles, reprocessFallbackArticles } from '../lib/processor/llm'
 import { shouldAlarmProcessRun } from '../lib/processor/outcome'
 import { createServiceClient } from '../lib/supabase'
-import { discoverModels, reviveExhaustedModels } from '../lib/llm/discovery'
+import {
+  countAvailableModels,
+  discoverModels,
+  probeSweep,
+  reviveExhaustedModels,
+} from '../lib/llm/discovery'
+
+// Trigger probe sweep when fewer known models are healthy than this.
+// Healthy steady-state is ≥10; <3 means the env chain has burned through
+// the per-model daily quota — DashScope counts free-tier quota per
+// model ID, so newly-released model IDs in the unknown pool usually
+// still have fresh buckets. The sweep promotes the first batch that
+// pings 200 so the run can drain the queue with real LLM calls instead
+// of falling through to the hard-fallback summary again.
+const SWEEP_THRESHOLD = 3
+const SWEEP_LIMIT = 30
 
 async function warmUpModelHealth() {
   if (process.env.LLM_DYNAMIC_CHAIN === 'off') return
@@ -21,6 +36,23 @@ async function warmUpModelHealth() {
       process.env.LLM_API_KEY || ''
     )
     if (ids.length > 0) console.log(`[Process] Discovered ${ids.length} model(s) from provider`)
+
+    const available = await countAvailableModels(client, provider)
+    console.log(`[Process] ${available} model(s) currently available`)
+    if (available < SWEEP_THRESHOLD) {
+      console.log(`[Process] Below threshold (${SWEEP_THRESHOLD}), probing up to ${SWEEP_LIMIT} unknown model(s)...`)
+      const promoted = await probeSweep(
+        client,
+        provider,
+        process.env.LLM_BASE_URL || '',
+        process.env.LLM_API_KEY || '',
+        SWEEP_LIMIT
+      )
+      console.log(
+        `[Process] Probe sweep promoted ${promoted.length} model(s)` +
+          (promoted.length > 0 ? `: ${promoted.join(', ')}` : '')
+      )
+    }
   } catch (err) {
     console.warn('[Process] Model health warm-up skipped:', err instanceof Error ? err.message : err)
   }

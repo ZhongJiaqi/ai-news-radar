@@ -245,6 +245,10 @@ export async function discoverModels(
   return modelIds
 }
 
+// Per-probe wall-clock cap. Sweep is sequential, so a hanging unknown
+// model would block the entire warm-up — bound it to 10s.
+const PROBE_TIMEOUT_MS = 10_000
+
 // 1-token minimal probe; updates row to available/exhausted/broken based
 // on outcome. Used by sweep when no available model exists.
 export async function probeModel(
@@ -255,6 +259,8 @@ export async function probeModel(
   modelId: string
 ): Promise<ModelStatus> {
   const start = Date.now()
+  const ctl = new AbortController()
+  const timer = setTimeout(() => ctl.abort(), PROBE_TIMEOUT_MS)
   try {
     const res = await fetch(`${baseURL.replace(/\/+$/, '')}/chat/completions`, {
       method: 'POST',
@@ -268,6 +274,7 @@ export async function probeModel(
         temperature: 0,
         messages: [{ role: 'user', content: 'hi' }],
       }),
+      signal: ctl.signal,
     })
     if (res.ok) {
       await markModelSuccess(client, provider, modelId, Date.now() - start)
@@ -282,10 +289,14 @@ export async function probeModel(
       message: e instanceof Error ? e.message : String(e),
     })
     return 'broken'
+  } finally {
+    clearTimeout(timer)
   }
 }
 
-// Sweep all unknown rows for a provider. Returns IDs that turned available.
+// Sweep unknown rows for a provider. Returns IDs that turned available.
+// Sequential to keep per-provider rate-limit pressure bounded; 10s timeout
+// per probe via probeModel.
 export async function probeSweep(
   client: SupabaseClient,
   provider: string,
@@ -314,4 +325,18 @@ export async function probeSweep(
     if (status === 'available') newlyAvailable.push(row.model_id as string)
   }
   return newlyAvailable
+}
+
+// Count rows by status for a provider. Lets warm-up decide whether
+// the known chain is healthy or it needs to sweep the unknown pool.
+export async function countAvailableModels(
+  client: SupabaseClient,
+  provider: string
+): Promise<number> {
+  const { count } = await client
+    .from(TABLE)
+    .select('*', { count: 'exact', head: true })
+    .eq('provider', provider)
+    .eq('status', 'available')
+  return count ?? 0
 }
