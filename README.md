@@ -8,8 +8,9 @@ Daily AI Briefing — 每日 AI 简报，帮助 AI 从业者快速了解最重�
 
 - **前端**: Next.js 15 (App Router) + TypeScript + Tailwind CSS
 - **数据库**: Supabase (PostgreSQL)
-- **LLM**: Generic provider layer (Anthropic + OpenAI-compatible endpoints such as DashScope)
+- **LLM**: Generic provider layer (Anthropic + OpenAI-compatible endpoints such as DashScope) with **self-healing dynamic chain**（discover → revive → probe-sweep unknown pool）
 - **部署**: Vercel + GitHub Actions Cron
+- **通知**: 飞书机器人卡片（可选，digest 跑完自动推送）
 
 ## 核心功能
 
@@ -110,12 +111,42 @@ npm run test:e2e
 3. Cron Jobs（GitHub Actions）：
    - **Crawl Sources** (`crawl.yml`)：每 6h 抓取，`workflow_dispatch` 也可手动触发
    - **Process Articles** (`process.yml`)：**事件驱动 + cron 兜底**——`crawl` 完成立刻触发（`workflow_run`），同时保留每 3h cron 作为 backup。180 min wall-clock budget，内部 drain loop 跑到队列清空或临近超时；单次 LLM 调用 60s timeout 防 hang
-   - **Generate Daily Digest** (`digest.yml`)：每天 UTC 23:07（北京 07:07）生成前一日日报，含 dedup + summary_top8 + summary_top30
+   - **Generate Daily Digest** (`digest.yml`)：**事件驱动 + cron 兜底**——`process` 完成立刻触发（`workflow_run`），同时保留每天 UTC 23:07 cron 作 safety net（GH cron 实测延迟 60-150min，事件驱动消除该延迟）。脚本层 `isAlreadyFinalized` 检查兜重复触发（process 每天跑 ~8 次，已 finalized 的直接 exit 0 不烧 LLM）。可选 `LARK_WEBHOOK_URL` → 推送飞书卡片
    - **Retention Cleanup** (`cleanup.yml`)：每周一清理（articles >90d、job_runs >30d、daily_digests >7d）
 
 ### LLM 动态自愈链（Supabase `llm_model_health` 表）
 
-`scripts/process.ts` 启动前调 provider 的 `/v1/models` 拉模型清单 UPSERT 进 `llm_model_health`，按 `last_success_at` + `avg_latency_ms` 排序生成动态 chain。模型 quota 耗尽（403/429）自动标 `exhausted` + `exhausted_until = 次日 UTC 0 点`，下次跑前自动复活过期项。一键关闭：`LLM_DYNAMIC_CHAIN=off`。详见 `lib/llm/discovery.ts`。
+`scripts/process.ts` 启动 warm-up 三件套：
+
+1. **`reviveExhaustedModels`** — `exhausted_until` 已过的自动复活回 `available`
+2. **`discoverModels`** — 调 provider 的 `/v1/models` 拉账号当前清单 UPSERT 进表（新模型 status=`unknown`）
+3. **`probeSweep`** — `getDynamicChain` 返回的 available < 3 时，对 unknown 池跑 1-token 探测（最多 30 个，每个 10s timeout），命中的自动 mark `available` 并立即进入 chain。**DashScope 免费额度按模型 ID 单独计**，已知 chain 全 exhausted 时这一步能从 200+ 个未知模型里挖出新可用桶（实测一次 sweep 65s 出 13 个可用，含 `kimi-k2.6` 343ms / `qwen3.7-max-preview` 1.5s / `deepseek-v4-pro` 3.4s 等）
+
+调用顺序：`generate()` 时 `resolveDynamicChain` 按 `last_success_at` + `avg_latency_ms` 排序生成动态 chain。模型 quota 耗尽（403/429 + quota 文字）自动标 `exhausted` + `exhausted_until = 次日 UTC 0 点`；401/404 标 `broken`；其他 4xx 不污染状态。
+
+一键关闭：`LLM_DYNAMIC_CHAIN=off`。详见 `lib/llm/discovery.ts`。
+
+### 飞书机器人推送（可选）
+
+`digest` 跑完后自动推送一张交互卡片到飞书自定义机器人。卡片含：今日要点 4 行 + Top Stories 3 篇（带原文 URL / 来源 / score emoji 🔴🟠🟡⚪）+「查看完整简报」按钮跳 `/digest`。
+
+#### 配置步骤
+
+1. 飞书群 → 群设置 → 群机器人 → 添加 → 自定义机器人
+2. 安全设置：
+   - ⛔ **签名校验关闭**（脚本不带签名，开启会被 19021 拒收）
+   - ✅ **关键词**：填 `Radar`（卡片 header `🛰 AI News Radar · YYYY-MM-DD` 自动满足）
+3. 拷贝 webhook URL（形如 `https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxx`）
+4. 设置 GitHub Actions secret：`gh secret set LARK_WEBHOOK_URL`
+5. 本地手跑想发飞书：在 `.env.local` 加 `LARK_WEBHOOK_URL=...`
+
+#### 双 idempotent 兜底
+
+- digest 脚本入口 `isAlreadyFinalized` 检查：今日 row 已 finalized（usable summary + non-empty ids）→ 整 digest skip → 不发飞书
+- pushLarkDigest 内部 `isUsableSummary` 检查：row 是 hard fallback 单段落 → 单独 skip 推送（不污染飞书）
+- 所有 fetch/parse 错误 console.warn 不抛，飞书挂不会拖垮 digest job
+
+未设 `LARK_WEBHOOK_URL` → 静默 skip。详见 `lib/notify/lark.ts`。
 
 ### Vercel Analytics
 
@@ -145,9 +176,10 @@ ai-news-radar/
 ├── lib/
 │   ├── crawlers/            # 128 个数据源爬虫
 │   ├── processor/           # LLM 处理 + 简报生成
-│   ├── llm/                 # LLM provider 层
+│   ├── llm/                 # LLM provider 层 + discovery (probe-sweep 自愈)
+│   ├── notify/              # 飞书机器人卡片推送 (lark.ts)
 │   ├── history.ts           # History 结构化数据层
 │   ├── db.ts                # 查询重试封装 (queryWithRetry)
-│   └── utils/               # 工具函数 (去重/时间/pangu)
+│   └── utils/               # 工具函数 (digestSummary/时间/pangu)
 └── supabase/migrations/     # 数据库 Schema
 ```
