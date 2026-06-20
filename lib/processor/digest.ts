@@ -9,6 +9,26 @@ import { getDateRangeCN } from '../utils/time'
 import type { EnrichedArticle, DigestStats, ContentCategory } from '../types'
 import { pangu } from '../utils/pangu'
 
+// 公司官方 X 账号白名单。@sama / @karpathy / @swyx 等个人账号不算官方，
+// 同事件下不强制优先；让 LLM 按内容信息量评分自然 tiebreak。
+const OFFICIAL_X_HANDLES = new Set([
+  '@claudeai',
+  '@AnthropicAI',
+  '@OpenAI',
+  '@GoogleDeepMind',
+  '@GoogleLabs',
+])
+
+export function isOfficialSource(a: { source_name: string }): boolean {
+  const s = a.source_name || ''
+  if (s.startsWith('Blog: ')) return true
+  if (s.startsWith('X: ')) {
+    const handle = s.slice('X: '.length).trim()
+    return OFFICIAL_X_HANDLES.has(handle)
+  }
+  return false
+}
+
 const CATEGORY_EMOJI: Record<ContentCategory, string> = {
   model_release: '',
   product_tool: '',
@@ -282,6 +302,10 @@ export async function deduplicateArticles(articles: EnrichedArticle[]): Promise<
   这三篇都围绕同一笔融资事件，应保留信息量最大的一篇，其余视为重复。
 - 同一公司在同一时间窗内的多个**真正独立的动作**不算重复（例如"Anthropic 完成融资"和"Anthropic 发布 Opus 4.8"是两件事，不算重复）
 - 不同公司或不相关主题不算重复（即使同属 AI 安全/算力/融资等大主题）
+- 中文报道与英文报道（含 X 推文、播客集名、官博文章）描述同一具体事件算重复。
+  例如「Anthropic 完成 H 轮融资」和 "Anthropic raises Series H" 是一组。
+- 同事件下，公司官方账号（@claudeai、@AnthropicAI、@OpenAI、@GoogleDeepMind、
+  @GoogleLabs）或官博的一手内容应优先保留（信息量等同），二手媒体报道算重复。
 
 ${titleList}
 
@@ -309,14 +333,22 @@ ${titleList}
       const validIndices = group.filter(i => typeof i === 'number' && i >= 0 && i < articles.length)
       if (validIndices.length < 2) continue
 
-      // Find the best article in the group (highest score, then earliest published)
+      // Find the best article in the group:
+      // 1. 高 importance_score 优先
+      // 2. 同分时：公司官方账号 / 官博 优先（一手 + 权威）
+      // 3. 同分同官方状态时：published_at 早的优先（一手即时性）
       let bestIdx = validIndices[0]
       for (const idx of validIndices.slice(1)) {
         const current = articles[idx]
         const best = articles[bestIdx]
+        const currentIsOfficial = isOfficialSource(current)
+        const bestIsOfficial = isOfficialSource(best)
         if (
           current.importance_score > best.importance_score ||
           (current.importance_score === best.importance_score &&
+            currentIsOfficial && !bestIsOfficial) ||
+          (current.importance_score === best.importance_score &&
+            currentIsOfficial === bestIsOfficial &&
             new Date(current.published_at || 0) < new Date(best.published_at || 0))
         ) {
           bestIdx = idx
