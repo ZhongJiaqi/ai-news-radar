@@ -13,7 +13,9 @@ import { isDuplicateKeyError } from './outcome'
 
 const SYSTEM_PROMPT = `你是 AI Radar 的内容分析师，专注于全球 AI 行业动态。
 你的任务是分析 AI 相关文章，为中国 AI 从业者（产品经理、开发者、创业者）提取关键信息。
-输出必须是严格的 JSON 格式，不得包含任何额外文字。`
+输出必须是严格的 JSON 格式，不得包含任何额外文字。
+- 对于来自 X 推文、播客或官博的一手内容（source_name 以 "X:" / "Podcast:" / "Blog:"
+  开头），不应因内容长度短而扣分；评估应基于事件重要性和影响范围，而非字数。`
 
 // Build "slug (中文名)" list for the LLM prompt
 const CATEGORY_PROMPT_LIST = CONTENT_CATEGORIES

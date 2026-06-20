@@ -1,0 +1,38 @@
+name: Crawl Follow-Builders
+
+on:
+  # follow-builders 每天 ~08:00 UTC push 新 feed，10:00 UTC 给 2h 余裕
+  schedule:
+    - cron: '0 10 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --no-audit --no-fund
+      - run: npx tsx scripts/crawl-follow-builders.ts
+
+      # 复用 6/20 上线的告警基础设施（参考 crawl.yml）
+      - name: Notify Lark on failure
+        if: ${{ failure() || cancelled() }}
+        env:
+          LARK_WEBHOOK_URL: ${{ secrets.LARK_WEBHOOK_URL }}
+          ALERT_TYPE: 'Crawl Follow-Builders 失败'
+          ALERT_SUBTITLE: 'follow-builders 中央 feed 拉取失败，今日 builder 内容缺失'
+          ALERT_DETAILS: |
+            常见原因：raw.githubusercontent.com 5xx / JSON parse 失败 / supabase 写入失败
+            triggered by: ${{ github.event_name }}
+            run id: ${{ github.run_id }}
+          ALERT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: npx tsx scripts/notify-lark-alert.ts
