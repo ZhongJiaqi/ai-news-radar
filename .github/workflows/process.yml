@@ -54,3 +54,17 @@ jobs:
           cache: npm
       - run: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --no-audit --no-fund
       - run: npx tsx scripts/process.ts
+      # On-failure Lark alert — see crawl.yml for rationale.
+      - name: Notify Lark on failure
+        if: ${{ failure() || cancelled() }}
+        env:
+          LARK_WEBHOOK_URL: ${{ secrets.LARK_WEBHOOK_URL }}
+          ALERT_TYPE: 'Process Articles 失败'
+          ALERT_SUBTITLE: '处理流水线异常退出，今日 digest 可能基于不完整数据'
+          ALERT_DETAILS: |
+            常见原因：LLM 全链路挂 / drain loop timeout / supabase write 失败
+            建议动作：查 GH Actions log 看 LLM 错误（如 Arrearage 需充值）
+            triggered by: ${{ github.event_name }}
+            run id: ${{ github.run_id }}
+          ALERT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: npx tsx scripts/notify-lark-alert.ts

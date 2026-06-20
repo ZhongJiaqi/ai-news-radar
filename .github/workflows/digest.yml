@@ -56,3 +56,21 @@ jobs:
           cache: npm
       - run: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --no-audit --no-fund
       - run: npx tsx scripts/digest.ts ${{ github.event.inputs.date }}
+      # On-failure Lark alert. The script-level Lark push also handles the
+      # silent-green case (LLM all-fail → hard-fallback summary → alert
+      # instead of digest card). This step covers the *other* failure
+      # axis: the digest script itself crashing (timeout, supabase down,
+      # uncaught exception) before lark.ts even runs.
+      - name: Notify Lark on failure
+        if: ${{ failure() || cancelled() }}
+        env:
+          LARK_WEBHOOK_URL: ${{ secrets.LARK_WEBHOOK_URL }}
+          ALERT_TYPE: 'Generate Daily Digest 失败'
+          ALERT_SUBTITLE: 'digest 生成 workflow 异常退出，今天可能没有简报或停留在旧版本'
+          ALERT_DETAILS: |
+            常见原因：digest.ts 抛错 / supabase 不可用 / LLM 全链路 timeout 拖垮 step
+            建议动作：查 GH Actions log；如 LLM 错则同 process 失败处理
+            triggered by: ${{ github.event_name }}
+            run id: ${{ github.run_id }}
+          ALERT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: npx tsx scripts/notify-lark-alert.ts

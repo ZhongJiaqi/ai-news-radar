@@ -22,3 +22,22 @@ jobs:
           cache: npm
       - run: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --no-audit --no-fund
       - run: npx tsx scripts/crawl.ts
+      # On-failure Lark alert. Runs after the main step regardless of
+      # outcome; the `if` gate scopes the push to failed/cancelled jobs
+      # only. install must have succeeded for tsx to be available — that
+      # covers the realistic failure modes (RSS 5xx, supabase write,
+      # runner timeout). If npm install itself fails we silently lose the
+      # alert, which is acceptable since GH Actions UI still shows it.
+      - name: Notify Lark on failure
+        if: ${{ failure() || cancelled() }}
+        env:
+          LARK_WEBHOOK_URL: ${{ secrets.LARK_WEBHOOK_URL }}
+          ALERT_TYPE: 'Crawl Sources 失败'
+          ALERT_SUBTITLE: '今日抓取 workflow 异常退出，下游 process / digest 可能数据不全'
+          ALERT_DETAILS: |
+            常见原因：上游 RSS 源 5xx / supabase 写入失败 / runner timeout
+            建议动作：查 GH Actions log 看具体抛错位置
+            triggered by: ${{ github.event_name }}
+            run id: ${{ github.run_id }}
+          ALERT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: npx tsx scripts/notify-lark-alert.ts
