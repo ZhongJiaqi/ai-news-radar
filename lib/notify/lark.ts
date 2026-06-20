@@ -148,7 +148,8 @@ export async function sendLarkCard(
 export async function pushLarkDigest(
   supabase: SupabaseClient,
   date: string,
-  webhookUrl: string | undefined
+  webhookUrl: string | undefined,
+  runUrl?: string
 ): Promise<void> {
   if (!webhookUrl) {
     console.log('[Lark] LARK_WEBHOOK_URL not set, skipping push')
@@ -164,20 +165,38 @@ export async function pushLarkDigest(
     console.warn(
       `[Lark] Failed to load digest row for ${date}: ${rowErr?.message || 'row not found'}`
     )
+    await pushLarkAlert(webhookUrl, {
+      type: 'Digest 行加载失败',
+      subtitle: `${date} 无法从 daily_digests 读取行`,
+      details: [
+        `原因：${rowErr?.message || 'row not found'}`,
+        '可能是 generateDailyDigest 提前抛错，或 supabase 连接异常',
+      ],
+      runUrl,
+    })
     return
   }
 
   const summaryTop8 =
     (row.stats as { summary_top8?: string } | null)?.summary_top8 || ''
 
-  // Skip when the row is a hard-fallback single paragraph or simply
-  // empty. /digest itself degrades to the most recent finalized
-  // briefing in that case; a Lark card with one giant blob would be
-  // worse than no card at all.
+  // Hard-fallback or empty summary means LLM全挂 → 推告警卡而不是 silent skip。
+  // /digest 页面会自动降级到上一份可用 briefing；我们要让用户知道今天的
+  // 是坏数据，而不是悄悄不发飞书让用户以为产品没在跑。
   if (!isUsableSummary(summaryTop8)) {
     console.log(
-      `[Lark] ${date} summary is hard-fallback or empty, skipping push`
+      `[Lark] ${date} summary is hard-fallback or empty, pushing alert instead`
     )
+    await pushLarkAlert(webhookUrl, {
+      type: 'LLM 全链路失败',
+      subtitle: `${date} 今日 digest 走了 heuristic fallback，飞书简报已跳过`,
+      details: [
+        '直接症状：dedup + summary 全部抛错，digest 摘要降级为启发式拼接',
+        '常见根因：阿里云百炼欠费 (Arrearage) / 全 chain 模型 quota 耗尽 / network 抖动',
+        '建议动作：查 GH Actions log 看 LLM 错误码，Arrearage 需充值并打开模型「免费额度用完即停」开关',
+      ],
+      runUrl,
+    })
     return
   }
 
@@ -234,6 +253,109 @@ export async function pushLarkDigest(
   } catch (err) {
     console.warn(
       `[Lark] Send threw (non-fatal): ${err instanceof Error ? err.message : String(err)}`
+    )
+  }
+}
+
+// ======================================================
+// Alert card — for workflow failure / silent-green guard.
+// Reuses the same webhook (LARK_WEBHOOK_URL) as digest but distinguishes
+// itself by red header + 🚨 prefix + "告警" keyword so the user can mute
+// either flow independently via Lark filters if needed later.
+// ======================================================
+
+export interface LarkAlertInput {
+  /** Short tag shown after the keyword, e.g. "Process Articles 失败". */
+  type: string
+  /** One-line lead shown in bold inside the card body. */
+  subtitle: string
+  /** Optional bullet lines for context (errors, run metadata, hints). */
+  details?: string[]
+  /** Optional URL — rendered as a primary action button. */
+  runUrl?: string
+}
+
+export function buildLarkAlertCard(input: LarkAlertInput): LarkCard {
+  const detailLines = (input.details || [])
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0)
+
+  const bodyLines: string[] = [`**${input.subtitle.trim() || '请查看详情'}**`]
+  if (detailLines.length > 0) {
+    bodyLines.push('')
+    for (const line of detailLines) bodyLines.push(`- ${line}`)
+  }
+
+  const elements: unknown[] = [
+    {
+      tag: 'div',
+      text: { tag: 'lark_md', content: bodyLines.join('\n') },
+    },
+  ]
+
+  if (input.runUrl) {
+    elements.push({ tag: 'hr' })
+    elements.push({
+      tag: 'action',
+      actions: [
+        {
+          tag: 'button',
+          text: { tag: 'plain_text', content: '查看 GitHub Actions Run' },
+          type: 'primary',
+          url: input.runUrl,
+        },
+      ],
+    })
+  }
+
+  // Keyword "Radar" + "告警" in the title satisfies both the digest bot's
+  // existing "Radar" keyword filter and lets a future alert-only filter
+  // target "告警" specifically.
+  return {
+    msg_type: 'interactive',
+    card: {
+      config: { wide_screen_mode: true },
+      header: {
+        title: {
+          tag: 'plain_text',
+          content: `🚨 AI Radar 告警 · ${input.type}`,
+        },
+        template: 'red',
+      },
+      elements,
+    },
+  }
+}
+
+export async function pushLarkAlert(
+  webhookUrl: string | undefined,
+  input: LarkAlertInput
+): Promise<void> {
+  if (!webhookUrl) {
+    console.log('[Lark] LARK_WEBHOOK_URL not set, alert skipped')
+    return
+  }
+
+  const card = buildLarkAlertCard(input)
+
+  if (webhookUrl === 'DRY_RUN') {
+    console.log('[Lark] DRY_RUN — would POST this alert card:')
+    console.log(JSON.stringify(card, null, 2))
+    return
+  }
+
+  try {
+    const result = await sendLarkCard(webhookUrl, card)
+    if (result.ok) {
+      console.log(`[Lark] Alert sent (http=${result.status})`)
+    } else {
+      console.warn(
+        `[Lark] Alert send failed (http=${result.status}): ${result.message}`
+      )
+    }
+  } catch (err) {
+    console.warn(
+      `[Lark] Alert send threw (non-fatal): ${err instanceof Error ? err.message : String(err)}`
     )
   }
 }

@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import { strict as assert } from 'node:assert'
 
-import { buildLarkCard, sendLarkCard } from './lark'
+import { buildLarkAlertCard, buildLarkCard, sendLarkCard } from './lark'
 
 const SAMPLE_BULLETS = [
   'OpenAI 发布 GPT-5，标志着大模型能力进入新阶段，开发者应重新评估技术栈。',
@@ -123,6 +123,78 @@ test('sendLarkCard: 200 + legacy {StatusCode:0} also returns ok', async () => {
   } finally {
     globalThis.fetch = originalFetch
   }
+})
+
+test('buildLarkAlertCard: red template + 🚨 + keyword "Radar" + 告警 + type in title', () => {
+  const card = buildLarkAlertCard({
+    type: 'LLM 全链路失败',
+    subtitle: '今日 digest 走了 heuristic fallback',
+  })
+  assert.equal(card.msg_type, 'interactive')
+  assert.equal(card.card.header.template, 'red')
+  const title = card.card.header.title.content
+  assert.ok(title.includes('🚨'), 'alert prefix emoji required')
+  assert.ok(title.includes('Radar'), 'Lark keyword filter requires "Radar"')
+  assert.ok(title.includes('告警'), 'separate alert keyword for future muting')
+  assert.ok(title.includes('LLM 全链路失败'), 'type must appear in title')
+})
+
+test('buildLarkAlertCard: subtitle rendered bold + details as bullet list', () => {
+  const card = buildLarkAlertCard({
+    type: '测试',
+    subtitle: '主标题文案',
+    details: ['原因 A', '原因 B', '建议 C'],
+  })
+  const body = card.card.elements[0] as { text: { content: string } }
+  assert.ok(body.text.content.includes('**主标题文案**'))
+  assert.ok(body.text.content.includes('- 原因 A'))
+  assert.ok(body.text.content.includes('- 原因 B'))
+  assert.ok(body.text.content.includes('- 建议 C'))
+})
+
+test('buildLarkAlertCard: filters empty/whitespace detail lines', () => {
+  const card = buildLarkAlertCard({
+    type: '测试',
+    subtitle: 's',
+    details: ['real', '  ', '', '\t', 'another'],
+  })
+  const body = card.card.elements[0] as { text: { content: string } }
+  assert.ok(body.text.content.includes('- real'))
+  assert.ok(body.text.content.includes('- another'))
+  assert.ok(
+    !body.text.content.includes('- \n'),
+    'empty bullets must not be emitted'
+  )
+})
+
+test('buildLarkAlertCard: runUrl rendered as primary action button', () => {
+  const card = buildLarkAlertCard({
+    type: '测试',
+    subtitle: 's',
+    runUrl: 'https://github.com/foo/bar/actions/runs/123',
+  })
+  // div + hr + action
+  assert.equal(card.card.elements.length, 3)
+  const actionEl = card.card.elements[2] as {
+    actions: Array<{ url: string; type: string; text: { content: string } }>
+  }
+  assert.equal(actionEl.actions[0].type, 'primary')
+  assert.equal(
+    actionEl.actions[0].url,
+    'https://github.com/foo/bar/actions/runs/123'
+  )
+  assert.ok(actionEl.actions[0].text.content.includes('GitHub Actions'))
+})
+
+test('buildLarkAlertCard: no runUrl → no action button (just body)', () => {
+  const card = buildLarkAlertCard({ type: '测试', subtitle: 's' })
+  assert.equal(card.card.elements.length, 1)
+})
+
+test('buildLarkAlertCard: empty subtitle falls back to placeholder', () => {
+  const card = buildLarkAlertCard({ type: '测试', subtitle: '   ' })
+  const body = card.card.elements[0] as { text: { content: string } }
+  assert.ok(body.text.content.includes('请查看详情'))
 })
 
 test('sendLarkCard: 200 + non-zero code returns not-ok (signature failure mode)', async () => {

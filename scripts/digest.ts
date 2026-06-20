@@ -55,8 +55,23 @@ async function main() {
   // LARK_WEBHOOK_URL unset → silently skipped inside pushLarkDigest.
   // Best-effort: any failure inside pushLarkDigest is caught and logged,
   // never reaches us, so it can't fail the digest job.
+  // Build the GH Actions run URL so the alert card (if any) can deep-link
+  // back to the failing job. Undefined when running locally.
+  const ghServer = process.env.GITHUB_SERVER_URL
+  const ghRepo = process.env.GITHUB_REPOSITORY
+  const ghRunId = process.env.GITHUB_RUN_ID
+  const runUrl =
+    ghServer && ghRepo && ghRunId
+      ? `${ghServer}/${ghRepo}/actions/runs/${ghRunId}`
+      : undefined
+
   try {
-    await pushLarkDigest(createServiceClient(), date, process.env.LARK_WEBHOOK_URL)
+    await pushLarkDigest(
+      createServiceClient(),
+      date,
+      process.env.LARK_WEBHOOK_URL,
+      runUrl
+    )
   } catch (err) {
     console.warn(
       `[Digest] Lark push wrapper threw (non-fatal): ${err instanceof Error ? err.message : String(err)}`
