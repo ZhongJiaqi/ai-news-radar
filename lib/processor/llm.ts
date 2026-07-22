@@ -9,6 +9,7 @@ import { CATEGORY_LABELS } from '../i18n/categories'
 import { CONTENT_CATEGORIES } from '../types'
 import type { LLMResult, ContentCategory } from '../types'
 import { pangu } from '../utils/pangu'
+import { looksLikePromptEcho } from '../utils/promptEcho'
 import { isDuplicateKeyError } from './outcome'
 
 const SYSTEM_PROMPT = `你是 AI Radar 的内容分析师，专注于全球 AI 行业动态。
@@ -98,6 +99,13 @@ export async function processArticle(
     }
 
     const parsed = JSON.parse(jsonMatch[0])
+
+    if (
+      looksLikePromptEcho(String(parsed.summary_zh || '')) ||
+      looksLikePromptEcho(String(parsed.why_it_matters || ''))
+    ) {
+      throw new Error('LLM echoed prompt template instead of summarizing')
+    }
 
     const category = CONTENT_CATEGORIES.includes(parsed.category)
       ? parsed.category as ContentCategory

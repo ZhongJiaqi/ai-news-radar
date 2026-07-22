@@ -39,6 +39,17 @@ test('isUsableSummary fails when there is only one real bullet', () => {
   assert.equal(isUsableSummary(one), false)
 })
 
+test('isUsableSummary rejects a summary that echoes the prompt template', () => {
+  // 2026-07-22 production incident: qwen3.5-ocr copied the JSON template
+  // placeholder straight into summary_top8. Enough bullets, but garbage.
+  const echoed = [
+    '1. [🔴 极重要] agegr/pi-web - Web UI for the pi coding agent',
+    '2-3 句话的中文摘要，说清楚是什么、有什么变化',
+    '3. [🟠 重要] 另一条看起来正常长度的要点，但整份摘要已被模板污染。',
+  ].join('\n')
+  assert.equal(isUsableSummary(echoed), false)
+})
+
 test('summaryLines filters out short / whitespace-only lines', () => {
   const raw = [
     'OpenAI 发布 GPT-5，标志着大模型能力进入新阶段，开发者应重新评估技术栈。',

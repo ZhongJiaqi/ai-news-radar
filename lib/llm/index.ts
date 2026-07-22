@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createServiceClient } from '../supabase'
 import {
   getDynamicChain,
+  isQuotaExhaustionError as isQuotaExhaustionErrorShared,
   markModelFailure,
   markModelSuccess,
 } from './discovery'
@@ -168,22 +169,13 @@ function providerKey(): string {
 }
 
 // Errors worth swapping models for: free-tier exhaustion, quota,
-// rate limit. We do NOT swap on network or 5xx errors — those are
-// transient and callWithRetry handles them.
+// rate limit, account arrearage. We do NOT swap on network or 5xx
+// errors — those are transient and callWithRetry handles them.
+// Delegates to the shared classifier in discovery.ts so the in-flight
+// swap decision and the health-table telemetry can never drift apart.
 function isQuotaExhaustionError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false
-  const e = err as { status?: number; message?: string }
-  if (e.status === 429) return true
-  if (e.status !== 403) return false
-  const msg = (e.message || '').toLowerCase()
-  return (
-    msg.includes('freetieronly') ||
-    msg.includes('free tier') ||
-    msg.includes('allocationquota') ||
-    msg.includes('exhausted') ||
-    msg.includes('insufficient') ||
-    msg.includes('quota')
-  )
+  return isQuotaExhaustionErrorShared(err as { status?: number; message?: string })
 }
 
 const toErrText = (err: unknown): string => {

@@ -20,7 +20,35 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 
+import { isConfirmedFreeModel } from './free-models'
+
 export type ModelStatus = 'available' | 'exhausted' | 'broken' | 'unknown'
+
+// Task-fit filter. Non-chat SKUs (OCR / vision / audio / media / domain
+// specialists) answer a 1-token probe with 200 OK yet cannot score or
+// summarize articles — qwen3.5-ocr hijacked the chain for 6 days
+// (2026-07-16..22) exactly this way.
+const NON_CHAT_ID_PATTERN = new RegExp(
+  [
+    'ocr', 'omni', 'audio', 'asr', 'tts', 'speech', 'voice',
+    'paraformer', 'sambert', 'cosyvoice', 'embedding', 'rerank',
+    'wanx', 'wan2', 't2v', 'i2v', 't2i', 'image', 'video', 'captioner',
+    'qvq', '-vl', 'vl-', 'flux', 'stable-diffusion', '(^|-)mt-',
+    'doc-turbo', 'doc-mind', 'farui', 'character', 'realtime',
+    'avatar', 'animate',
+  ].join('|')
+)
+
+export function isChatCapableModelId(modelId: string): boolean {
+  return !NON_CHAT_ID_PATTERN.test(modelId.toLowerCase())
+}
+
+// The only gate through which a model may enter the calling chain:
+// task-fit AND officially confirmed free. Applies to DB rows and the env
+// fallback chain alike — a stale env entry must not bypass the guard.
+export function isChainEligibleModel(modelId: string): boolean {
+  return isChatCapableModelId(modelId) && isConfirmedFreeModel(modelId)
+}
 
 export interface ModelHealthRow {
   provider: string
@@ -40,10 +68,7 @@ export interface ModelHealthRow {
 
 const TABLE = 'llm_model_health'
 
-// DashScope free-tier quotas reset daily at 00:00 UTC. We mark the
-// model unavailable until the next UTC midnight; if any other provider
-// uses a different policy, we still default to 24h which is a safe
-// upper bound.
+// Used for transient throttling (429): retry from the next UTC midnight.
 function nextResetISO(now: Date = new Date()): string {
   const next = new Date(Date.UTC(
     now.getUTCFullYear(),
@@ -54,8 +79,28 @@ function nextResetISO(now: Date = new Date()): string {
   return next.toISOString()
 }
 
-function isQuotaExhaustionError(err: { status?: number; message?: string }): boolean {
+// DashScope free quotas are ONE-TIME grants, not daily resets: models that
+// 403'd on 2026-06-04 kept failing forever (6600+ failures each). Bench a
+// quota-dead model long enough that daily revive can't zombie it back —
+// zombies inflate the available count and block the probe-sweep trigger.
+const QUOTA_EXHAUSTED_COOLDOWN_MS = 90 * 86400_000
+
+// Account arrearage blocks ALL models but clears the moment the bill is
+// paid — bench briefly so the chain falls through without poisoning the
+// pool for a whole day.
+const ARREARAGE_COOLDOWN_MS = 3600_000
+
+function isArrearageError(err: { status?: number; message?: string }): boolean {
+  const msg = (err.message || '').toLowerCase()
+  return msg.includes('arrearage') || msg.includes('overdue')
+}
+
+export function isQuotaExhaustionError(err: { status?: number; message?: string }): boolean {
   if (err.status === 429) return true
+  // Account-level blockade arrives as 400 "Access denied ... Arrearage /
+  // overdue-payment" — treat as exhaustion so the chain falls through and
+  // digest-level alerts fire instead of silently retrying.
+  if (isArrearageError(err)) return true
   if (err.status !== 403) return false
   const msg = (err.message || '').toLowerCase()
   return (
@@ -66,6 +111,16 @@ function isQuotaExhaustionError(err: { status?: number; message?: string }): boo
     msg.includes('insufficient') ||
     msg.includes('quota')
   )
+}
+
+function exhaustionUntilISO(err: { status?: number; message?: string }): string {
+  if (isArrearageError(err)) {
+    return new Date(Date.now() + ARREARAGE_COOLDOWN_MS).toISOString()
+  }
+  if (err.status === 403) {
+    return new Date(Date.now() + QUOTA_EXHAUSTED_COOLDOWN_MS).toISOString()
+  }
+  return nextResetISO()
 }
 
 function ema(prev: number | null, sample: number, alpha = 0.3): number {
@@ -138,7 +193,7 @@ export async function markModelFailure(
 
   if (status === 'exhausted') {
     update.status = 'exhausted'
-    update.exhausted_until = nextResetISO()
+    update.exhausted_until = exhaustionUntilISO(err)
   } else if (status === 'broken') {
     update.status = 'broken'
     update.exhausted_until = null
@@ -181,15 +236,17 @@ export async function getDynamicChain(
     .order('avg_latency_ms', { ascending: true, nullsFirst: false })
 
   if (error || !data || data.length === 0) {
-    return fallbackChain
+    return fallbackChain.filter(isChainEligibleModel)
   }
 
-  const dbChain = data.map(r => r.model_id as string)
+  const dbChain = data
+    .map(r => r.model_id as string)
+    .filter(isChainEligibleModel)
   // Fold in any env-fallback model not yet known to the table so first
   // boot still works before any telemetry exists.
   const seen = new Set(dbChain)
   for (const m of fallbackChain) {
-    if (!seen.has(m)) {
+    if (!seen.has(m) && isChainEligibleModel(m)) {
       dbChain.push(m)
       seen.add(m)
     }
@@ -309,34 +366,56 @@ export async function probeSweep(
     .select('model_id')
     .eq('provider', provider)
     .eq('status', 'unknown')
-    .limit(limit)
+    .limit(1000)
 
   if (!data || data.length === 0) return []
 
-  const newlyAvailable: string[] = []
-  for (const row of data) {
-    const status = await probeModel(
-      client,
-      provider,
-      baseURL,
-      apiKey,
-      row.model_id as string
+  const ids = data.map(r => r.model_id as string)
+
+  // Retire non-chat SKUs permanently so they never clog the unknown pool
+  // or get probed into the chain again.
+  const nonChat = ids.filter(id => !isChatCapableModelId(id))
+  if (nonChat.length > 0) {
+    const nowIso = new Date().toISOString()
+    await client.from(TABLE).upsert(
+      nonChat.map(id => ({
+        provider,
+        model_id: id,
+        status: 'broken',
+        last_error_message: 'non-chat model (task-fit filter)',
+        updated_at: nowIso,
+      })),
+      { onConflict: 'provider,model_id' }
     )
-    if (status === 'available') newlyAvailable.push(row.model_id as string)
+  }
+
+  // Probing a paid model "succeeds" and pulls it into the chain where it
+  // burns money (2026-06-16 omni-plus incident). Only officially confirmed
+  // free models may be probed; the rest stay 'unknown' until the whitelist
+  // is refreshed from console data.
+  const candidates = ids.filter(isChainEligibleModel).slice(0, limit)
+
+  const newlyAvailable: string[] = []
+  for (const modelId of candidates) {
+    const status = await probeModel(client, provider, baseURL, apiKey, modelId)
+    if (status === 'available') newlyAvailable.push(modelId)
   }
   return newlyAvailable
 }
 
-// Count rows by status for a provider. Lets warm-up decide whether
-// the known chain is healthy or it needs to sweep the unknown pool.
+// Count chain-eligible available models for a provider. Lets warm-up decide
+// whether the known chain is healthy or it needs to sweep the unknown pool.
+// Must apply the same eligibility gate as getDynamicChain — an available
+// row the chain can't use (non-chat / unverified) would otherwise suppress
+// the sweep trigger forever.
 export async function countAvailableModels(
   client: SupabaseClient,
   provider: string
 ): Promise<number> {
-  const { count } = await client
+  const { data } = await client
     .from(TABLE)
-    .select('*', { count: 'exact', head: true })
+    .select('model_id')
     .eq('provider', provider)
     .eq('status', 'available')
-  return count ?? 0
+  return (data ?? []).filter(r => isChainEligibleModel(r.model_id as string)).length
 }
