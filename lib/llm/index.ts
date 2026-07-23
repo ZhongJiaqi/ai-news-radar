@@ -368,11 +368,15 @@ async function generate(params: GenerateParams): Promise<GenerateResult> {
         message: toErrText(err),
       }
       await recordTelemetry(config.provider, chain[i], { ok: false, err: errLike })
-      // Only try next model on quota / free-tier exhaustion. Other errors
-      // (transient, programming, prompt) bubble up immediately.
-      if (!isQuotaExhaustionError(err) || i === chain.length - 1) throw err
+      // Try the next model on quota / free-tier exhaustion AND on timeout
+      // (408): a model that is too slow for this prompt says nothing about
+      // the rest of the chain — kimi-k2.7-code timed out on the digest
+      // prompt 3× on 2026-07-23 while two faster models sat unused. Other
+      // errors (programming, prompt) bubble up immediately.
+      const swappable = isQuotaExhaustionError(err) || errLike.status === 408
+      if (!swappable || i === chain.length - 1) throw err
       console.warn(
-        `[LLM] Model ${chain[i]} exhausted (${(err as { status?: number }).status}), trying ${chain[i + 1]}`
+        `[LLM] Model ${chain[i]} unavailable (${(err as { status?: number }).status}), trying ${chain[i + 1]}`
       )
     }
   }

@@ -7,6 +7,7 @@ const ENV_KEYS = [
   'LLM_API_KEY',
   'LLM_BASE_URL',
   'LLM_MODEL',
+  'LLM_MODEL_CHAIN',
   'CLAUDE_SMALL_MODEL',
   'CLAUDE_LARGE_MODEL',
 ]
@@ -127,6 +128,53 @@ test('generateText uses OpenAI-compatible /chat/completions and returns trimmed 
           'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions'
         )
         assert.equal(calls[0].init?.headers?.Authorization, 'Bearer k')
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    }
+  )
+})
+
+// 2026-07-23 incident: kimi-k2.7-code timed out (180s) on the big digest
+// prompt three times in a row while two faster models sat unused behind it
+// in the chain — timeouts must swap to the next model, not bubble up.
+test('timeout on one model falls through to the next model in the chain', async () => {
+  await withEnv(
+    {
+      LLM_API_KEY: 'k',
+      LLM_BASE_URL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+      LLM_MODEL: 'qwen3.7-plus',
+      LLM_MODEL_CHAIN: 'qwen3.7-plus,qwen3.6-plus',
+    },
+    async () => {
+      const originalFetch = globalThis.fetch
+      const modelsCalled: string[] = []
+
+      globalThis.fetch = (async (_url: any, init: any) => {
+        const body = JSON.parse(init.body)
+        modelsCalled.push(body.model)
+        if (body.model === 'qwen3.7-plus') {
+          const err = new Error('The operation was aborted.')
+          ;(err as Error & { name: string }).name = 'AbortError'
+          throw err
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ choices: [{ message: { content: 'ok from backup' } }] }),
+          text: async () => '',
+        } as any
+      }) as any
+
+      try {
+        const result = await generateText({
+          task: 'digest',
+          prompt: 'ping',
+          maxTokens: 10,
+        })
+        assert.equal(result.text, 'ok from backup')
+        assert.equal(result.modelUsed, 'openai-compatible:qwen3.6-plus')
+        assert.ok(modelsCalled.includes('qwen3.6-plus'), 'backup model must be tried')
       } finally {
         globalThis.fetch = originalFetch
       }
