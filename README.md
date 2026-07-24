@@ -18,9 +18,15 @@ AI 一天一个样：模型发布、产品动态、观点争论散落在官方�
 
 ## 效果展示
 
-<!-- TODO(素材): ① /digest 首屏截图（暗色雷达终端风格 + 今日要点）
-     ② /archive/[date] 阅读器截图（Top 30 + 8 类速览 + 左侧历史轨道）
-     ③ 飞书蓝色简报卡 + 红色告警卡截图 -->
+**每日简报 `/digest`** —— 今日要点 + Top Stories：
+
+![每日简报](docs/screenshots/digest.png)
+
+**历史归档 `/archive`** —— 按日期回看，每天 Top 30 + 8 类速览：
+
+![历史归档](docs/screenshots/archive.png)
+
+<!-- TODO(素材): 飞书蓝色简报卡 + 红色告警卡截图（需从飞书客户端手动截） -->
 
 直接看线上：[ai-radar-delta.vercel.app/digest](https://ai-radar-delta.vercel.app/digest)
 
