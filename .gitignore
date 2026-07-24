@@ -9,3 +9,4 @@ supabase/.temp/
 test-results/
 .playwright-mcp/
 docs/
+.claude/settings.local.json
