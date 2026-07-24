@@ -26,7 +26,9 @@ AI 一天一个样：模型发布、产品动态、观点争论散落在官方�
 
 ![历史归档](docs/screenshots/archive.png)
 
-<!-- TODO(素材): 飞书蓝色简报卡 + 红色告警卡截图（需从飞书客户端手动截） -->
+**飞书每日推送** —— 今日要点 + Top Stories，一键跳完整简报：
+
+![飞书简报卡](docs/screenshots/feishu-card.png)
 
 直接看线上：[ai-radar-delta.vercel.app/digest](https://ai-radar-delta.vercel.app/digest)
 
