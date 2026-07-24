@@ -1,51 +1,68 @@
-# AI News Radar
+# AI News Radar — 每天 5 分钟读完 AI 圈的一天
 
-Daily AI Briefing — 每日 AI 简报，帮 AI 从业者快速了解最重要的 AI 动态。
+> 给需要每天跟进 AI 动态的从业者/求职者的自动化简报，解决「信息散在上百个源里，逐个刷完要一两个小时，同一件事还被反复报」的问题。
 
-🔗 **线上地址**：https://ai-radar-delta.vercel.app/
+🔗 线上：[ai-radar-delta.vercel.app](https://ai-radar-delta.vercel.app/) —— [`/digest`](https://ai-radar-delta.vercel.app/digest) 今日简报 · [`/archive`](https://ai-radar-delta.vercel.app/archive) 历史归档
 
-## 你能看到什么
+## 为什么做这个
 
-| 页面 | 内容 |
-|---|---|
-| **Daily Briefing** [`/digest`](https://ai-radar-delta.vercel.app/digest) | 今日要点 8 行 + Top 3 头条 + More Signals 5 条 |
-| **Archive** [`/archive`](https://ai-radar-delta.vercel.app/archive) | 按日期翻历史，每天 Top 30 精选 + 8 类速览 |
+跟进 AI 行业动态是刚需，但信息散在几十个官方博客、媒体、Reddit、HN、X 上：逐个刷一遍要一两个小时，漏看又焦虑；同一个模型发布，中英文五六个源各报一遍；通用 RSS 阅读器只做聚合，不判断重要性、不去重、更不给中文摘要。所以做了一条全自动流水线：128 个数据源定时爬取 → LLM 逐篇中文摘要、按重要性 1-10 打分、8 类分类 → 跨语言去重合并同一事件 → 每天产出一页 5 分钟能读完的简报，附飞书推送。为了让它无人值守地一直跑下去，大部分工程量花在了「免费 LLM 额度耗尽、模型异常时如何自愈」上。
 
-每天北京时间凌晨自动跑一遍：从 130 个数据源抓取 → LLM 摘要 / 分类 / 跨语言去重 / 按重要性 1-10 打分 → 生成简报。
+## 核心功能
 
-## 数据源（130 个）
+- ✅ 128 个源自动爬取 —— 官方博客 / 中英媒体 / HN / GitHub & HuggingFace Trending / AI builder 推文与播客（via [follow-builders](https://github.com/zarazhangrui/follow-builders)），不用自己维护 RSS 列表
+- ✅ LLM 摘要 + 重要性打分 —— 每篇产出中文摘要、1-10 重要性、8 类分类和"为什么重要"，打开就是排好序的今日要点
+- ✅ 跨语言去重 —— 同一事件中英多源只留一条，官方源优先做代表；去重集中在 cron 做一次，页面只读引用
+- ✅ 免费模型自愈链 —— 模型池状态落库（探测 / 冷却 / 复活 / 遥测排序），配额耗尽或超时自动切换；免费聊天模型硬白名单挡住付费模型和不能聊天的 SKU 混入
+- ✅ 全链路可观测 —— 生成失败或静默跳过都会推飞书红色告警卡，正常日推蓝色简报卡；页面 ISR 静态化，秒开
 
-涵盖 AI 行业全谱：
+## 效果展示
 
-- 🏢 **官方博客** — OpenAI / Anthropic / Google DeepMind / Meta AI / xAI / Mistral / NVIDIA / Hugging Face 等
-- 📰 **媒体** — 36氪 / 量子位 / TechCrunch / CNBC / MIT Technology Review 等
-- 👥 **Builder 一手观点** *(2026-06-20 新增)* — 26 个 AI builder 的 X 推文（@karpathy / @sama / @bcherny 等）+ 6 个 AI 播客 transcript（Latent Space / No Priors / The MAD Podcast 等）+ 2 个官博（Anthropic Engineering / Claude Blog），数据由 [zarazhangrui/follow-builders](https://github.com/zarazhangrui/follow-builders) 提供
-- 🛠 **社区** — Hacker News / GitHub Trending / Hugging Face Trending
+<!-- TODO(素材): ① /digest 首屏截图（暗色雷达终端风格 + 今日要点）
+     ② /archive/[date] 阅读器截图（Top 30 + 8 类速览 + 左侧历史轨道）
+     ③ 飞书蓝色简报卡 + 红色告警卡截图 -->
 
-完整数据源清单见 [`lib/crawlers/sources.ts`](lib/crawlers/sources.ts)。
+直接看线上：[ai-radar-delta.vercel.app/digest](https://ai-radar-delta.vercel.app/digest)
 
-## 设计
+## 快速开始
 
-暗色「雷达终端」(Dark Radar Terminal) 风格：1180 居中阅读列 + 左右框线、雷达扫描动画、绿色信号 accent (`#5FE3A1`)、mono 元信息。字体：英文 **Outfit** / 数字 **JetBrains Mono** / 中文 **苹方 (PingFang SC)**。
+```bash
+npm install
+cp .env.example .env.local   # 按注释填 Supabase + LLM key
+npm run dev                  # http://localhost:3000
+```
 
-## 怎么订阅
+数据侧：在 Supabase 执行 [`supabase/migrations/`](supabase/migrations/)（001–007）建表；`npm run crawl` / `npm run process` / `npm run digest` 可手动跑一轮完整流水线（生产环境由 GitHub Actions cron 驱动）。
 
-### 网页书签
-直接收藏 [`/digest`](https://ai-radar-delta.vercel.app/digest)，每天打开看今日。
+| 环境变量 | 必需 | 用途 |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 是 | Supabase 项目与公开读 key（RLS 只放行 SELECT） |
+| `SUPABASE_SERVICE_ROLE_KEY` | 是 | 流水线写库用（只出现在 Actions secrets） |
+| `LLM_API_KEY` / `LLM_BASE_URL` | 是 | LLM 供应商（DashScope OpenAI 兼容端点或 Anthropic） |
+| `LLM_MODEL_CHAIN` | 否 | 备用模型链；配合库表实现自愈 |
+| `CRON_SECRET` | 是 | 保护 `/api/cron/*` 路由的 bearer token |
+| `LARK_WEBHOOK_URL` | 否 | 飞书机器人推送（安全设置：关键词 `Radar`，勿开签名校验） |
 
-### 飞书机器人推送
-每天自动推送今日要点到你的飞书群（含 Top Stories + 查看完整简报按钮）。
+## 技术方案（简）
 
-配置 5 分钟：
+Next.js 15（App Router + ISR）+ Supabase（Postgres/RLS）+ GitHub Actions cron + 飞书 webhook；LLM 走 DashScope 免费模型池（Qwen/DeepSeek 系）或 Anthropic。数据流：crawl（每 6h，多源并发 + 标题哈希去重）→ process（事件接力触发，drain-loop 批处理 LLM 摘要）→ digest（每日一次：筛分 ≥5 的文章、LLM 跨语言去重、生成 top-30/top-8 双摘要、写库 + 推飞书卡）→ 页面按引用读取，ISR 静态化。
 
-1. 飞书群 → 群设置 → 群机器人 → 添加 → 自定义机器人
-2. 安全设置：**签名校验关闭** ⛔（开了机器人会被拒收）+ **关键词** 填 `Radar` ✅
-3. 拷贝 webhook URL，设置环境变量 `LARK_WEBHOOK_URL`
+## 设计取舍
 
-工作日异常时（爬虫失败 / LLM 全挂 / 上游 RSS 5xx）会推**红色告警卡**，正常 digest 是**蓝色卡**。
+1. 静态 fallback 链 → 库表驱动的自愈链（`93513575`、`8fd860ba`）：静态链在配额耗尽时每次调用白等 ~30s，20 分钟的 job 被拖死；自愈链自动探测/冷却/复活模型。代价是引入一张状态表，以及"探活了不能聊天的模型"这类新故障面——OCR 模型劫持打分 6 天全绿无告警之后，补了免费聊天模型硬白名单 + prompt 回显守卫（`a81421c5`）。
+2. 去重从页面渲染挪到 cron 集中做一次（`6a9bf2c3`）：两个页面渲染的是同一池子的不同切片，每天约 48 次 LLM 去重调用降到 1 次；代价是简报表要存 `top_article_ids` 引用、页面按 ID 取数。
+3. 固定批量 → 墙钟预算 drain-loop（`e158e070`）：单篇 LLM 延迟从 8s 漂到 32s 时，固定 `BATCH_SIZE=50` 会让 20 分钟 job 在 60% 处被掐断；改成按剩余时间决定还接不接下一批。
 
-## 开发者文档
+## Roadmap
 
-技术栈（Next.js 15 + Supabase + GitHub Actions Cron + 自愈 LLM 链路 + 飞书机器人）、数据库 schema、cron 配置、本地部署、LLM 自愈链设计等开发细节，见 [`docs/`](docs/) 和源码注释。
+- [ ] 免费模型白名单按 provider 拆分（现为 DashScope 专用手工清单，新免费模型不会自动入池）
+- [ ] 启用 X/Twitter 直连源（3 个源已就位，等 `TWITTER_BEARER_TOKEN`）
+- [ ] 死源维护（sources.ts 中 6 个已注释的失效源修复或移除）
 
-环境变量 example: [`.env.example`](.env.example) / 数据库 migration: [`supabase/migrations/`](supabase/migrations/)。
+## 订阅
+
+网页直接收藏 [`/digest`](https://ai-radar-delta.vercel.app/digest)；飞书群推送：加自定义机器人 → 安全设置关签名校验、关键词填 `Radar` → webhook 填进 `LARK_WEBHOOK_URL`，5 分钟接通。
+
+## License
+
+MIT
