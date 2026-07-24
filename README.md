@@ -1,6 +1,6 @@
 # AI News Radar — 每天 5 分钟读完 AI 圈的一天
 
-> 给需要每天跟进 AI 动态的从业者/求职者的自动化简报，解决「信息散在上百个源里，逐个刷完要一两个小时，同一件事还被反复报」的问题。
+> 给需要每天跟进 AI 动态的从业者/求职者的自动化简报，解决「信息散在上百个源里、更新快到刷不完，同一件事还被反复报」的问题。
 
 🔗 线上：[ai-radar-delta.vercel.app](https://ai-radar-delta.vercel.app/) —— [`/digest`](https://ai-radar-delta.vercel.app/digest) 今日简报 · [`/archive`](https://ai-radar-delta.vercel.app/archive) 历史归档
 
