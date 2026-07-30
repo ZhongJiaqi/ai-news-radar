@@ -10,8 +10,6 @@ AI 一天一个样：模型发布、产品动态、观点争论散落在官方�
 
 所以做了一条全自动流水线：128 个 RSS 源 + AI builder 动态定时爬取 → LLM 逐篇中文摘要、按重要性 1-10 打分、8 类分类 → 跨语言去重合并同一事件 → 每天产出一页 5 分钟能读完的简报，附飞书推送。
 
-为了让它无人值守地一直跑下去，大部分工程量花在了「免费 LLM 额度耗尽、模型异常时如何自愈」上。
-
 ## 核心功能
 
 - ✅ 128 个 RSS 源自动爬取 —— 官方博客 / 中英媒体 / HN / GitHub & HuggingFace Trending，另有 AI builder 推文与播客独立爬虫（via [follow-builders](https://github.com/zarazhangrui/follow-builders)），不用自己维护 RSS 列表
