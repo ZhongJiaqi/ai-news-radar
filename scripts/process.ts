@@ -9,6 +9,8 @@ import {
   probeSweep,
   reviveExhaustedModels,
 } from '../lib/llm/discovery'
+import { pushLarkAlert } from '../lib/notify/lark'
+import { markPoolEmptyNotified, shouldNotifyPoolEmpty } from '../lib/notify/poolEmptyAlert'
 
 // Trigger probe sweep when fewer known models are healthy than this.
 // Healthy steady-state is ≥10; <3 means the env chain has burned through
@@ -52,6 +54,29 @@ async function warmUpModelHealth() {
         `[Process] Probe sweep promoted ${promoted.length} model(s)` +
           (promoted.length > 0 ? `: ${promoted.join(', ')}` : '')
       )
+
+      // Pool completely dry: nothing available AND the sweep found nothing.
+      // Articles will fall through to heuristic scores until the whitelist
+      // gets new models — user asked for a proactive Lark ping here.
+      // Throttled to at most one card per day (process runs 8+ times/day).
+      if (available === 0 && promoted.length === 0) {
+        if (await shouldNotifyPoolEmpty(client)) {
+          await pushLarkAlert(process.env.LARK_WEBHOOK_URL, {
+            type: 'LLM 模型池已耗尽',
+            subtitle: '所有免费模型额度用完，已无模型可用',
+            details: [
+              '影响：新文章打分降级为规则兜底（score 3-5），今日摘要将变成 heuristic 拼接',
+              '恢复方法 1：阿里云控制台 → 模型广场 查看还有免费额度的模型，把模型名告诉 Claude 加白名单',
+              '恢复方法 2：换厂商（OpenRouter / SiliconFlow）或对现有模型充值',
+              '本告警每天最多发送一次',
+            ],
+            runUrl: process.env.GITHUB_RUN_URL,
+          })
+          await markPoolEmptyNotified(client)
+        } else {
+          console.log('[Process] Pool empty but already notified within 24h, skipping alert')
+        }
+      }
     }
   } catch (err) {
     console.warn('[Process] Model health warm-up skipped:', err instanceof Error ? err.message : err)

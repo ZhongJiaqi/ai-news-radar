@@ -46,6 +46,10 @@ jobs:
       LLM_MODEL_CHAIN: ${{ secrets.LLM_MODEL_CHAIN }}
       JOB_BUDGET_MINUTES: ${{ inputs.job_budget_minutes || '180' }}
       REPROCESS_BATCH_SIZE: ${{ inputs.reprocess_batch_size || '50' }}
+      # For the in-script pool-empty alert (scripts/process.ts warm-up) —
+      # distinct from the on-failure alert step below.
+      LARK_WEBHOOK_URL: ${{ secrets.LARK_WEBHOOK_URL }}
+      GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
