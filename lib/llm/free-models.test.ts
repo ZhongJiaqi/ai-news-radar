@@ -9,6 +9,8 @@ test('isConfirmedFreeModel: accepts models from the official free-tier list', ()
   assert.equal(isConfirmedFreeModel('qwen3.6-plus-2026-04-02'), true)
   assert.equal(isConfirmedFreeModel('qwen3.7-max-2026-06-08'), true)
   assert.equal(isConfirmedFreeModel('qwen3.7-plus'), true)
+  // user-confirmed free with remaining quota, 2026-07-31 console check
+  assert.equal(isConfirmedFreeModel('qwen3.7-flash-2026-07-15'), true)
 })
 
 test('isConfirmedFreeModel: rejects paid or unverified models', () => {
