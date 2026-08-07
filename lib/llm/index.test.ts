@@ -27,6 +27,10 @@ function withEnv(env: Record<string, string | undefined>, fn: () => Promise<void
 
   try {
     for (const key of ENV_KEYS) delete process.env[key]
+    // Generator unit tests must never consult the live model-health table.
+    // CI has real Supabase secrets, so leaving dynamic routing enabled makes
+    // otherwise isolated fetch mocks depend on mutable production state.
+    process.env.LLM_DYNAMIC_CHAIN = 'off'
     for (const [k, v] of Object.entries(env)) {
       if (typeof v === 'string') process.env[k] = v
       else delete process.env[k]
