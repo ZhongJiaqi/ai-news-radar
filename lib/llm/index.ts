@@ -261,6 +261,9 @@ async function generateWithOpenAICompatible(config: ResolvedConfig, prompt: stri
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
   try {
+    const disableThinking =
+      config.baseURL.includes('dashscope.aliyuncs.com') &&
+      /^(deepseek-v4|qwen3|glm-5|kimi-k2)/i.test(config.model)
     const response = await fetch(`${config.baseURL}/chat/completions`, {
       signal: controller.signal,
       method: 'POST',
@@ -272,6 +275,7 @@ async function generateWithOpenAICompatible(config: ResolvedConfig, prompt: stri
         model: config.model,
         max_tokens: maxTokens,
         temperature: 0.2,
+        ...(disableThinking ? { enable_thinking: false } : {}),
         messages: [
           {
             role: 'user',

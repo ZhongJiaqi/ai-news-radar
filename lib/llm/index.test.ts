@@ -199,10 +199,12 @@ test('empty content from one model falls through to the next model in the chain'
     async () => {
       const originalFetch = globalThis.fetch
       const modelsCalled: string[] = []
+      const callsForModels = new Map<string, string>()
 
       globalThis.fetch = (async (_url: any, init: any) => {
         const body = JSON.parse(init.body)
         modelsCalled.push(body.model)
+        callsForModels.set(body.model, init.body)
         return {
           ok: true,
           status: 200,
@@ -218,6 +220,10 @@ test('empty content from one model falls through to the next model in the chain'
         assert.equal(result.text, 'ok from backup')
         assert.equal(result.modelUsed, 'openai-compatible:qwen3.8-max')
         assert.deepEqual(modelsCalled, ['glm-5.2', 'qwen3.8-max'])
+        assert.equal(
+          JSON.parse(callsForModels.get('glm-5.2')!).enable_thinking,
+          false
+        )
       } finally {
         globalThis.fetch = originalFetch
       }
