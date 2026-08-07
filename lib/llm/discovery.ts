@@ -95,6 +95,10 @@ function isArrearageError(err: { status?: number; message?: string }): boolean {
   return msg.includes('arrearage') || msg.includes('overdue')
 }
 
+function isEmptyContentError(err: { message?: string }): boolean {
+  return (err.message || '').toLowerCase().includes('returned empty content')
+}
+
 export function isQuotaExhaustionError(err: { status?: number; message?: string }): boolean {
   if (err.status === 429) return true
   // Account-level blockade arrives as 400 "Access denied ... Arrearage /
@@ -120,6 +124,10 @@ function exhaustionUntilISO(err: { status?: number; message?: string }): string 
   if (err.status === 403) {
     return new Date(Date.now() + QUOTA_EXHAUSTED_COOLDOWN_MS).toISOString()
   }
+  // A 200 response with no usable content is often model-specific. Bench it
+  // until the next UTC day so another model can take over, then allow the
+  // normal revival/probe loop to reassess it.
+  if (isEmptyContentError(err)) return nextResetISO()
   return nextResetISO()
 }
 
@@ -172,10 +180,11 @@ export async function markModelFailure(
     .maybeSingle()
 
   const quotaIssue = isQuotaExhaustionError(err)
+  const unusableOutput = isEmptyContentError(err)
   // 401/403 without quota signal = key/model truly broken (not a quota issue).
   // 4xx that isn't 403/429 = caller-side prompt problem, do not poison the
   // model's health.
-  const status: ModelStatus | undefined = quotaIssue
+  const status: ModelStatus | undefined = quotaIssue || unusableOutput
     ? 'exhausted'
     : err.status === 401 || err.status === 404
       ? 'broken'

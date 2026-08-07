@@ -8,6 +8,7 @@ const ENV_KEYS = [
   'LLM_BASE_URL',
   'LLM_MODEL',
   'LLM_MODEL_CHAIN',
+  'LLM_DYNAMIC_CHAIN',
   'CLAUDE_SMALL_MODEL',
   'CLAUDE_LARGE_MODEL',
 ]
@@ -175,6 +176,44 @@ test('timeout on one model falls through to the next model in the chain', async 
         assert.equal(result.text, 'ok from backup')
         assert.equal(result.modelUsed, 'openai-compatible:qwen3.6-plus')
         assert.ok(modelsCalled.includes('qwen3.6-plus'), 'backup model must be tried')
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    }
+  )
+})
+
+test('empty content from one model falls through to the next model in the chain', async () => {
+  await withEnv(
+    {
+      LLM_API_KEY: 'k',
+      LLM_BASE_URL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+      LLM_MODEL: 'glm-5.2',
+      LLM_MODEL_CHAIN: 'glm-5.2,qwen3.8-max',
+      LLM_DYNAMIC_CHAIN: 'off',
+    },
+    async () => {
+      const originalFetch = globalThis.fetch
+      const modelsCalled: string[] = []
+
+      globalThis.fetch = (async (_url: any, init: any) => {
+        const body = JSON.parse(init.body)
+        modelsCalled.push(body.model)
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            choices: [{ message: { content: body.model === 'glm-5.2' ? '' : 'ok from backup' } }],
+          }),
+          text: async () => '',
+        } as any
+      }) as any
+
+      try {
+        const result = await generateText({ task: 'digest', prompt: 'ping', maxTokens: 10 })
+        assert.equal(result.text, 'ok from backup')
+        assert.equal(result.modelUsed, 'openai-compatible:qwen3.8-max')
+        assert.deepEqual(modelsCalled, ['glm-5.2', 'qwen3.8-max'])
       } finally {
         globalThis.fetch = originalFetch
       }

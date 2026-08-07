@@ -158,6 +158,7 @@ export async function processUnprocessedArticles(
   options: ProcessOptions | number = {}
 ): Promise<{
   processed: number
+  fallback: number
   failed: number
 }> {
   const opts: ProcessOptions = typeof options === 'number'
@@ -179,6 +180,7 @@ export async function processUnprocessedArticles(
   const jobId = job?.id
 
   let processed = 0
+  let fallback = 0
   let failed = 0
 
   // Main drain loop. Each iteration pulls one chunk and processes it.
@@ -262,6 +264,7 @@ export async function processUnprocessedArticles(
           .eq('id', article.id)
 
         processed++
+        if (modelUsed === 'fallback') fallback++
         await new Promise(r => setTimeout(r, 200))
       } catch (err) {
         console.error(`[Processor] Failed for article ${article.id}:`, err)
@@ -279,25 +282,26 @@ export async function processUnprocessedArticles(
     }
   }
 
-  console.log(`[Processor] Done: ${processed} processed, ${failed} failed`)
+  console.log(`[Processor] Done: ${processed - fallback} LLM-processed, ${fallback} fallback, ${failed} failed`)
 
   // Log job finish
   if (jobId) {
     await supabase.from('job_runs').update({
       status: failed > 0 && processed === 0 ? 'failed' : 'success',
       finished_at: new Date().toISOString(),
-      success_count: processed,
-      fail_count: failed,
+      success_count: processed - fallback,
+      fail_count: failed + fallback,
     }).eq('id', jobId)
   }
 
-  return { processed, failed }
+  return { processed, fallback, failed }
 }
 
 // ---- Fallback reprocessor ----
 
 export async function reprocessFallbackArticles(batchSize = 10): Promise<{
   reprocessed: number
+  pending: number
   failed: number
 }> {
   const supabase = createServiceClient()
@@ -312,7 +316,7 @@ export async function reprocessFallbackArticles(batchSize = 10): Promise<{
     .limit(batchSize)
 
   if (error) throw new Error(`Fallback fetch error: ${error.message}`)
-  if (!fallbacks || fallbacks.length === 0) return { reprocessed: 0, failed: 0 }
+  if (!fallbacks || fallbacks.length === 0) return { reprocessed: 0, pending: 0, failed: 0 }
 
   console.log(`[Reprocess] Found ${fallbacks.length} fallback articles to retry`)
 
@@ -389,5 +393,5 @@ export async function reprocessFallbackArticles(batchSize = 10): Promise<{
   console.log(
     `[Reprocess] Done: ${reprocessed} reprocessed, ${pending} pending (retry later), ${failed} failed`
   )
-  return { reprocessed, failed }
+  return { reprocessed, pending, failed }
 }

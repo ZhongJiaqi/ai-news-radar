@@ -14,9 +14,8 @@ import { markPoolEmptyNotified, shouldNotifyPoolEmpty } from '../lib/notify/pool
 
 // Trigger probe sweep when fewer known models are healthy than this.
 // Healthy steady-state is ≥10; <3 means the env chain has burned through
-// the per-model daily quota — DashScope counts free-tier quota per
-// model ID, so newly-released model IDs in the unknown pool usually
-// still have fresh buckets. The sweep promotes the first batch that
+// the per-model one-time free grants. Newly released model IDs in the
+// unknown pool may still have fresh grants. The sweep promotes the first batch that
 // pings 200 so the run can drain the queue with real LLM calls instead
 // of falling through to the hard-fallback summary again.
 const SWEEP_THRESHOLD = 3
@@ -97,15 +96,16 @@ async function main() {
 
   console.log(`[Process] Starting new-article drain pass (deadline in ${Math.round((newPassDeadline - Date.now())/60_000)}min)...`)
   const result = await processUnprocessedArticles({ deadlineMs: newPassDeadline, chunkSize: 20 })
+  const llmProcessed = result.processed - result.fallback
   const total = result.processed + result.failed
-  const successRate = total > 0 ? Math.round((result.processed / total) * 100) : 100
-  console.log(`[Process] Done: ${result.processed} processed, ${result.failed} failed (${successRate}% success rate)`)
+  const successRate = total > 0 ? Math.round((llmProcessed / total) * 100) : 100
+  console.log(`[Process] Done: ${llmProcessed} LLM-processed, ${result.fallback} fallback, ${result.failed} failed (${successRate}% real-LLM success rate)`)
 
   // Reprocess remains small-batch — fallback rows are rare (typically <10).
   const reprocessSize = parseInt(process.env.REPROCESS_BATCH_SIZE || '50', 10)
   console.log(`[Reprocess] Starting fallback retry pass (batch size: ${reprocessSize}, deadline in ${Math.round((reprocessDeadline - Date.now())/60_000)}min)...`)
   const reprocessResult = await reprocessFallbackArticles(reprocessSize)
-  console.log(`[Reprocess] Done: ${reprocessResult.reprocessed} reprocessed, ${reprocessResult.failed} failed`)
+  console.log(`[Reprocess] Done: ${reprocessResult.reprocessed} reprocessed, ${reprocessResult.pending} pending, ${reprocessResult.failed} failed`)
 
   // Alarm (non-zero exit → GitHub Actions failure email) only on a systemic
   // break: both passes did zero useful work AND hit genuine failures.

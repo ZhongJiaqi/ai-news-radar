@@ -5,6 +5,8 @@ import { CONFIRMED_FREE_CHAT_MODELS, isConfirmedFreeModel } from './free-models'
 
 test('isConfirmedFreeModel: accepts models from the official free-tier list', () => {
   assert.equal(isConfirmedFreeModel('glm-5.2'), true)
+  assert.equal(isConfirmedFreeModel('deepseek-v4-flash-0731'), true)
+  assert.equal(isConfirmedFreeModel('qwen3.8-max'), true)
   assert.equal(isConfirmedFreeModel('kimi-k2.7-code'), true)
   assert.equal(isConfirmedFreeModel('qwen3.6-plus-2026-04-02'), true)
   assert.equal(isConfirmedFreeModel('qwen3.7-max-2026-06-08'), true)

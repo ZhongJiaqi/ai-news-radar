@@ -178,6 +178,10 @@ function isQuotaExhaustionError(err: unknown): boolean {
   return isQuotaExhaustionErrorShared(err as { status?: number; message?: string })
 }
 
+function isEmptyContentError(err: unknown): boolean {
+  return toErrText(err).toLowerCase().includes('returned empty content')
+}
+
 const toErrText = (err: unknown): string => {
   if (err && typeof err === 'object') {
     const anyErr = err as Record<string, unknown>
@@ -373,7 +377,10 @@ async function generate(params: GenerateParams): Promise<GenerateResult> {
       // the rest of the chain — kimi-k2.7-code timed out on the digest
       // prompt 3× on 2026-07-23 while two faster models sat unused. Other
       // errors (programming, prompt) bubble up immediately.
-      const swappable = isQuotaExhaustionError(err) || errLike.status === 408
+      const swappable =
+        isQuotaExhaustionError(err) ||
+        errLike.status === 408 ||
+        isEmptyContentError(err)
       if (!swappable || i === chain.length - 1) throw err
       console.warn(
         `[LLM] Model ${chain[i]} unavailable (${(err as { status?: number }).status}), trying ${chain[i + 1]}`

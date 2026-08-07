@@ -14,6 +14,9 @@
 // ======================================================
 
 export const CONFIRMED_FREE_CHAT_MODELS: readonly string[] = [
+  // user-confirmed free with remaining quota per aliyun console, 2026-08-07
+  'deepseek-v4-flash-0731',
+  'qwen3.8-max',
   // user-confirmed free with remaining quota per aliyun console, 2026-07-31
   'qwen3.7-flash-2026-07-15',
   // freeTierOnly=true per aliyun data 2026-06-20

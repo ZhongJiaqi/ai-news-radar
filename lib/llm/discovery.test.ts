@@ -252,6 +252,23 @@ test('markModelFailure: 400 prompt error → does NOT change status', async () =
   assert.equal(payload.failure_count, 6)
 })
 
+test('markModelFailure: empty model output is temporarily exhausted', async () => {
+  const { client, calls } = makeMockClient({
+    select: { data: { failure_count: 6 } },
+    upsert: { data: null },
+  })
+
+  await markModelFailure(client, 'dashscope', 'glm-5.2', {
+    message: 'LLM returned empty content',
+  })
+
+  const payload = (calls.find(c => c.op === 'upsert')!.payload) as Record<string, unknown>
+  assert.equal(payload.status, 'exhausted')
+  const until = new Date(payload.exhausted_until as string).getTime()
+  assert.ok(until > Date.now(), 'empty-output cooldown must be in the future')
+  assert.ok(until < Date.now() + 25 * 3600_000, 'empty-output cooldown should be temporary')
+})
+
 // ----------------- reviveExhaustedModels -----------------
 
 test('reviveExhaustedModels: updates exhausted rows past their window', async () => {
