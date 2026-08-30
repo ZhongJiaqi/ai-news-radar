@@ -238,9 +238,8 @@ export async function getDynamicChain(
 ): Promise<string[]> {
   const { data, error } = await client
     .from(TABLE)
-    .select('model_id, last_success_at, avg_latency_ms')
+    .select('model_id, status, last_success_at, avg_latency_ms')
     .eq('provider', provider)
-    .eq('status', 'available')
     .order('last_success_at', { ascending: false, nullsFirst: false })
     .order('avg_latency_ms', { ascending: true, nullsFirst: false })
 
@@ -249,13 +248,15 @@ export async function getDynamicChain(
   }
 
   const dbChain = data
+    .filter(r => r.status === 'available')
     .map(r => r.model_id as string)
     .filter(isChainEligibleModel)
-  // Fold in any env-fallback model not yet known to the table so first
-  // boot still works before any telemetry exists.
+  // Fold in env fallbacks only when the model has no health row at all.
+  // A known exhausted/broken row must never be resurrected by stale env.
+  const known = new Set(data.map(r => r.model_id as string))
   const seen = new Set(dbChain)
   for (const m of fallbackChain) {
-    if (!seen.has(m) && isChainEligibleModel(m)) {
+    if (!known.has(m) && !seen.has(m) && isChainEligibleModel(m)) {
       dbChain.push(m)
       seen.add(m)
     }
@@ -315,8 +316,9 @@ export async function discoverModels(
 // model would block the entire warm-up — bound it to 10s.
 const PROBE_TIMEOUT_MS = 10_000
 
-// 1-token minimal probe; updates row to available/exhausted/broken based
-// on outcome. Used by sweep when no available model exists.
+// Small content-bearing probe; updates row to available/exhausted/broken
+// based on outcome. HTTP 200 alone is insufficient because reasoning models
+// can consume the output budget and return an empty visible response.
 export async function probeModel(
   client: SupabaseClient,
   provider: string,
@@ -336,13 +338,24 @@ export async function probeModel(
       },
       body: JSON.stringify({
         model: modelId,
-        max_tokens: 1,
+        max_tokens: 64,
         temperature: 0,
-        messages: [{ role: 'user', content: 'hi' }],
+        enable_thinking: false,
+        messages: [{ role: 'user', content: 'Reply with exactly: OK' }],
       }),
       signal: ctl.signal,
     })
     if (res.ok) {
+      const payload = await res.json() as {
+        choices?: Array<{ message?: { content?: string | null } }>
+      }
+      const content = payload.choices?.[0]?.message?.content ?? ''
+      if (!content.trim()) {
+        await markModelFailure(client, provider, modelId, {
+          message: 'LLM returned empty content during probe',
+        })
+        return 'exhausted'
+      }
       await markModelSuccess(client, provider, modelId, Date.now() - start)
       return 'available'
     }

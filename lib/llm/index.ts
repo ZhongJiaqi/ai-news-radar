@@ -263,7 +263,7 @@ async function generateWithOpenAICompatible(config: ResolvedConfig, prompt: stri
   try {
     const disableThinking =
       config.baseURL.includes('dashscope.aliyuncs.com') &&
-      /^(deepseek-v4|qwen3|glm-5|kimi-k2)/i.test(config.model)
+      /^(deepseek-v4|qwen3|glm-5|kimi-k\d)/i.test(config.model)
     const response = await fetch(`${config.baseURL}/chat/completions`, {
       signal: controller.signal,
       method: 'POST',

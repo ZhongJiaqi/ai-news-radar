@@ -14,6 +14,13 @@
 // ======================================================
 
 export const CONFIRMED_FREE_CHAT_MODELS: readonly string[] = [
+  // user-confirmed free with full remaining quota per console, 2026-08-30
+  'qwen3.8-flash',
+  'qwen3.8-27b',
+  'kimi-k3',
+  'deepseek-v4-pro-0813',
+  // qwen3.8-2.4t-a95b is also free, but requires enable_thinking=true;
+  // incompatible with this pipeline's bounded visible-output contract.
   // user-confirmed free with remaining quota per aliyun console, 2026-08-07
   'deepseek-v4-flash-0731',
   'qwen3.8-max',

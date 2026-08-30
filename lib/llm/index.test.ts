@@ -231,6 +231,37 @@ test('empty content from one model falls through to the next model in the chain'
   )
 })
 
+test('DashScope kimi-k3 disables thinking to preserve visible output budget', async () => {
+  await withEnv(
+    {
+      LLM_API_KEY: 'k',
+      LLM_BASE_URL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+      LLM_MODEL: 'kimi-k3',
+      LLM_DYNAMIC_CHAIN: 'off',
+    },
+    async () => {
+      const originalFetch = globalThis.fetch
+      let requestBody: Record<string, unknown> = {}
+      globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+        requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ choices: [{ message: { content: 'ok' } }] }),
+          text: async () => '',
+        } as any
+      }) as any
+
+      try {
+        await generateText({ task: 'article', prompt: 'ping', maxTokens: 10 })
+        assert.equal(requestBody.enable_thinking, false)
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    }
+  )
+})
+
 test('OpenAI-compatible 4xx errors do not retry', async () => {
   await withEnv(
     {

@@ -7,6 +7,11 @@ test('isConfirmedFreeModel: accepts models from the official free-tier list', ()
   assert.equal(isConfirmedFreeModel('glm-5.2'), true)
   assert.equal(isConfirmedFreeModel('deepseek-v4-flash-0731'), true)
   assert.equal(isConfirmedFreeModel('qwen3.8-max'), true)
+  // user-confirmed free with full remaining quota, 2026-08-30 console check
+  assert.equal(isConfirmedFreeModel('qwen3.8-flash'), true)
+  assert.equal(isConfirmedFreeModel('qwen3.8-27b'), true)
+  assert.equal(isConfirmedFreeModel('kimi-k3'), true)
+  assert.equal(isConfirmedFreeModel('deepseek-v4-pro-0813'), true)
   assert.equal(isConfirmedFreeModel('kimi-k2.7-code'), true)
   assert.equal(isConfirmedFreeModel('qwen3.6-plus-2026-04-02'), true)
   assert.equal(isConfirmedFreeModel('qwen3.7-max-2026-06-08'), true)
@@ -22,6 +27,9 @@ test('isConfirmedFreeModel: rejects paid or unverified models', () => {
   // never appeared in the official free list — unverified, must not be probed
   assert.equal(isConfirmedFreeModel('glm-5.1'), false)
   assert.equal(isConfirmedFreeModel('qwen4-super-new'), false)
+  assert.equal(isConfirmedFreeModel('qwen3.5-ocr'), false)
+  // free, but the API rejects enable_thinking=false and is not task-fit
+  assert.equal(isConfirmedFreeModel('qwen3.8-2.4t-a95b'), false)
 })
 
 test('CONFIRMED_FREE_CHAT_MODELS: is a non-empty deduplicated list', () => {

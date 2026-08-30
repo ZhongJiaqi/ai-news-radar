@@ -324,10 +324,10 @@ test('getDynamicChain: filters non-chat and non-whitelisted models from DB rows 
     select: {
       data: [
         // OCR model sits first (freshest success) — must be filtered
-        { model_id: 'qwen3.5-ocr', last_success_at: '2026-07-22T03:00:00Z', avg_latency_ms: 900 },
-        { model_id: 'qwen3.7-plus', last_success_at: '2026-07-13T10:00:00Z', avg_latency_ms: 1500 },
+        { model_id: 'qwen3.5-ocr', status: 'available', last_success_at: '2026-07-22T03:00:00Z', avg_latency_ms: 900 },
+        { model_id: 'qwen3.7-plus', status: 'available', last_success_at: '2026-07-13T10:00:00Z', avg_latency_ms: 1500 },
         // available in DB but never on the official free list — must be filtered
-        { model_id: 'glm-5.1', last_success_at: null, avg_latency_ms: null },
+        { model_id: 'glm-5.1', status: 'available', last_success_at: null, avg_latency_ms: null },
       ],
     },
   })
@@ -336,21 +336,22 @@ test('getDynamicChain: filters non-chat and non-whitelisted models from DB rows 
   assert.deepEqual(chain, ['qwen3.7-plus', 'qwen-turbo'])
 })
 
-test('getDynamicChain: returns DB rows folded with fallback for unknown models', async () => {
+test('getDynamicChain: appends only fallback models absent from the health table', async () => {
   const { client } = makeMockClient({
     select: {
       data: [
-        { model_id: 'qwen3.7-plus', last_success_at: '2026-06-03T10:00:00Z', avg_latency_ms: 1500 },
-        { model_id: 'qwen3.7-max', last_success_at: '2026-06-03T08:00:00Z', avg_latency_ms: 3000 },
+        { model_id: 'qwen3.8-max', status: 'available', last_success_at: '2026-08-30T05:00:00Z', avg_latency_ms: 1500 },
+        { model_id: 'qwen3.7-max', status: 'exhausted', last_success_at: '2026-06-03T08:00:00Z', avg_latency_ms: 3000 },
       ],
     },
   })
 
   const chain = await getDynamicChain(client, 'dashscope', [
-    'qwen3.7-plus', // already in DB
+    'qwen3.8-max', // available in DB
+    'qwen3.7-max', // exhausted in DB → must not be appended
     'qwen-turbo', // not in DB → should be appended
   ])
-  assert.deepEqual(chain, ['qwen3.7-plus', 'qwen3.7-max', 'qwen-turbo'])
+  assert.deepEqual(chain, ['qwen3.8-max', 'qwen-turbo'])
 })
 
 test('getDynamicChain: falls back to env chain when DB returns empty', async () => {
@@ -445,7 +446,7 @@ test('probeModel: 200 OK → marks available and returns available', async () =>
   globalThis.fetch = (async () => ({
     ok: true,
     status: 200,
-    json: async () => ({}),
+    json: async () => ({ choices: [{ message: { content: 'ok' } }] }),
     text: async () => '',
   })) as any
 
@@ -461,6 +462,43 @@ test('probeModel: 200 OK → marks available and returns available', async () =>
     const upsert = calls.find(c => c.op === 'upsert')!
     const payload = upsert.payload as Record<string, unknown>
     assert.equal(payload.status, 'available')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('probeModel: HTTP 200 with empty content is exhausted, not promoted', async () => {
+  const { client, calls } = makeMockClient({
+    select: { data: null },
+    upsert: { data: null },
+  })
+
+  const originalFetch = globalThis.fetch
+  let requestBody: Record<string, unknown> | undefined
+  globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+    requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ choices: [{ message: { content: '   ' } }] }),
+      text: async () => '',
+    }
+  }) as any
+
+  try {
+    const status = await probeModel(
+      client,
+      'dashscope',
+      'https://dashscope.aliyuncs.com/compatible-mode/v1',
+      'sk-fake',
+      'glm-5.2'
+    )
+    assert.equal(status, 'exhausted')
+    assert.equal(requestBody?.enable_thinking, false)
+    assert.equal(requestBody?.max_tokens, 64)
+    const payload = (calls.find(c => c.op === 'upsert')!.payload) as Record<string, unknown>
+    assert.equal(payload.status, 'exhausted')
+    assert.match(String(payload.last_error_message), /empty content/i)
   } finally {
     globalThis.fetch = originalFetch
   }
@@ -550,7 +588,12 @@ test('probeSweep: probes only whitelisted chat models, marks non-chat SKUs broke
   const originalFetch = globalThis.fetch
   globalThis.fetch = (async () => {
     probeCalls++
-    return { ok: true, status: 200, json: async () => ({}), text: async () => '' }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ choices: [{ message: { content: 'ok' } }] }),
+      text: async () => '',
+    }
   }) as any
 
   try {
